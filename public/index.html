@@ -1321,18 +1321,23 @@ const setSyncStatus=window.setSyncStatus;
 
 // Re-sincronização manual do catálogo de produtos
 async function forcarSyncProdutos(){
-  setSyncStatus(false,'Sincronizando...');
+  if(typeof setSyncStatus==='function') setSyncStatus(false,'Sincronizando...');
   toast('Sincronizando catálogo de produtos...');
   try {
-    if(typeof syncProdutosLocais === 'function'){
-      await syncProdutosLocais();
+    if(typeof window.syncProdutosLocais === 'function'){
+      await window.syncProdutosLocais();
       toast('✅ Catálogo sincronizado com sucesso!');
+    } else {
+      toast('Aguarde — Firebase ainda carregando...', false);
+      // tenta de novo em 2s
+      setTimeout(forcarSyncProdutos, 2000);
     }
   } catch(e) {
     toast('Erro ao sincronizar: '+e.message, false);
-    setSyncStatus(false,'Erro sync');
+    if(typeof setSyncStatus==='function') setSyncStatus(false,'Erro sync');
   }
 }
+window.forcarSyncProdutos = forcarSyncProdutos;
 function stBadge(v){
   if(v.st==='pago')return'<span class="badge pg">● Pago</span>';
   const d=dias(v.venc);
@@ -2980,8 +2985,14 @@ document.addEventListener('DOMContentLoaded',()=>{
   setOp();
   acInitProdutos();
   const nfData=document.getElementById('nf-data');if(nfData)nfData.value=today();
-  // show sync connecting
-  setSyncStatus(false,'Conectando...');
+  // show sync connecting — espera window.setSyncStatus estar disponível
+  const waitSync = setInterval(()=>{
+    if(typeof window.setSyncStatus==='function'){
+      clearInterval(waitSync);
+      window.setSyncStatus(false,'Conectando...');
+    }
+  },100);
+  setTimeout(()=>clearInterval(waitSync),5000);
 });
 // Click outside modal to close
 document.querySelectorAll('.modal-overlay').forEach(m=>{m.addEventListener('click',e=>{if(e.target===m)m.style.display='none'})});
