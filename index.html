@@ -3080,15 +3080,21 @@ function renderCondicional(){
       if(c.st==='aberto')statusBadge=atrasado?'<span class="badge vd">⚠ Vencido</span>':proxvenc?'<span class="badge pn">⏰ Próximo</span>':'<span class="badge cs">↗ Em aberto</span>';
       else if(c.st==='vendido')statusBadge='<span class="badge pg">✓ Vendido</span>';
       else if(c.st==='devolvido')statusBadge='<span class="badge ns">↩ Devolvido</span>';
+      const cid=c._fid||c.id;
+      // Busca todos os itens do mesmo condicional (mesmo cliente + mesma data de saída)
+      const todosItens=condicionais.filter(x=>x.cli===c.cli&&x.saida===c.saida);
+      const reimprimirFn=todosItens.length>1
+        ?`reimprimirCondicional('${c.cli}','${c.saida}')`
+        :`mostrarReciboCond((window.condicionais||[]).find(x=>x._fid==='${cid}'||String(x.id)==='${cid}'))`;
       let acoes='';
       if(c.st==='aberto'){
         acoes=`<div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center">
-          <button class="btn sm success" onclick="abrirModalCondVenda(${c.id})" title="Confirmar que o cliente comprou"><i class="ti ti-check"></i>Vendido</button>
-          <button class="btn sm" style="border-color:var(--blue);color:var(--blue)" onclick="condDevolver(${c.id})" title="Cliente devolveu a peça"><i class="ti ti-arrow-back-up"></i>Dev.</button>
-          <button class="btn sm ghost" onclick="mostrarReciboCond(condicionais.find(x=>x.id===${c.id}))" title="Imprimir / WhatsApp"><i class="ti ti-send"></i></button>
+          <button class="btn sm success" onclick="abrirModalCondVenda('${cid}')" title="Confirmar que o cliente comprou"><i class="ti ti-check"></i>Vendido</button>
+          <button class="btn sm" style="border-color:var(--blue);color:var(--blue)" onclick="condDevolver('${cid}')" title="Cliente devolveu a peça"><i class="ti ti-arrow-back-up"></i>Dev.</button>
+          <button class="btn sm ghost" onclick="${reimprimirFn}" title="Imprimir / WhatsApp"><i class="ti ti-send"></i></button>
         </div>`;
       } else {
-        acoes=`<button class="btn sm ghost" onclick="mostrarReciboCond(condicionais.find(x=>x.id===${c.id}))" title="Ver comprovante"><i class="ti ti-file-text"></i></button>`;
+        acoes=`<button class="btn sm ghost" onclick="${reimprimirFn}" title="Ver comprovante"><i class="ti ti-file-text"></i></button>`;
       }
       return`<tr style="${atrasado?'background:rgba(232,75,75,.04)':''}">
         <td class="mono">${fD(c.saida)}</td>
@@ -3104,9 +3110,18 @@ function renderCondicional(){
     }).join('')}</tbody>`;
 }
 
+function reimprimirCondicional(cli, saida){
+  const condicionais=window.condicionais||[];
+  const itens=condicionais.filter(x=>x.cli===cli&&x.saida===saida);
+  if(!itens.length){toast('Condicional não encontrado',false);return;}
+  mostrarReciboCond(itens[0], itens);
+}
+window.reimprimirCondicional=reimprimirCondicional;
+
 function condDevolver(id){
   const condicionais=window.condicionais||[];
-  const c=condicionais.find(x=>x.id===id||x.localId===id||String(x.id)===String(id));
+  const c=condicionais.find(x=>x._fid===id||String(x.id)===String(id)||x.localId===id);
+  if(!c){toast('Item não encontrado',false);return;}
   if(!confirm(`Confirmar devolução de "${c.prod}" por ${c.cli}?\nO produto retornará ao estoque.`))return;
   c.st='devolvido';c.data_enc=today();
   const p=produtos.find(x=>x._fid===c.pid||String(x.id)===String(c.pid));
@@ -3120,7 +3135,7 @@ function condDevolver(id){
 }
 
 function abrirModalCondVenda(id){
-  const c=condicionais.find(x=>x.id===id||x.localId===id||String(x.id)===String(id));
+  const c=(window.condicionais||[]).find(x=>x._fid===id||String(x.id)===String(id)||x.localId===id);
   if(!c)return;
   condEditId=id;
   document.getElementById('modal-cond-info').innerHTML=`
@@ -3138,7 +3153,7 @@ function abrirModalCondVenda(id){
 function condConfirmarVenda(){
   const condicionais=window.condicionais||[];
   const vendas=window.vendas||[];
-  const c=condicionais.find(x=>x.id===condEditId||x.localId===condEditId||String(x.id)===String(condEditId));
+  const c=(window.condicionais||[]).find(x=>x._fid===condEditId||String(x.id)===String(condEditId)||x.localId===condEditId);
   if(!c)return;
   const preco=R(document.getElementById('mcv-preco').value);
   const qtd=parseInt(document.getElementById('mcv-qtd').value)||c.qtd;
