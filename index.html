@@ -1201,7 +1201,7 @@ td.mono{font-family:'DM Mono',monospace;font-size:11px}
       <div class="fg"><label>Tamanho</label><input type="text" id="mprod-tam" placeholder="P/M/G/GG/-"></div>
     </div>
     <div class="form-row col3">
-      <div class="fg"><label>Pedido PWRD</label><input type="text" id="mprod-pedido"></div>
+      <div class="fg"><label>Código NF <span style="color:var(--text3);font-size:10px">(cProd da NF-e)</span></label><input type="text" id="mprod-codigo" placeholder="ex: 001234" style="font-family:'DM Mono',monospace"></div>
       <div class="fg"><label>Custo unit. (R$)</label><input type="number" id="mprod-custo" step="0.01"></div>
       <div class="fg"><label>Preço venda (R$)</label><input type="number" id="mprod-preco" step="0.01"></div>
     </div>
@@ -2886,6 +2886,7 @@ function abrirModalProduto(prodId=null){
       document.getElementById('mprod-cls').value=p.cls||'FEM';
       document.getElementById('mprod-tam').value=p.tam||'';
       document.getElementById('mprod-pedido').value=p.pedido||'';
+      document.getElementById('mprod-codigo').value=p.codigo||'';
       document.getElementById('mprod-custo').value=p.custo||'';
       document.getElementById('mprod-preco').value=p.preco||'';
       document.getElementById('mprod-estoque').value=Number.isFinite(p.est)?p.est:0;
@@ -2895,7 +2896,7 @@ function abrirModalProduto(prodId=null){
       toast('Produto não encontrado',false);return;
     }
   } else {
-    ['mprod-nome','mprod-tam','mprod-pedido','mprod-custo','mprod-preco'].forEach(fid=>document.getElementById(fid).value='');
+    ['mprod-nome','mprod-tam','mprod-pedido','mprod-codigo','mprod-custo','mprod-preco'].forEach(fid=>document.getElementById(fid).value='');
     document.getElementById('mprod-estoque').value=0;
     document.getElementById('mprod-consig').value=0;
     document.getElementById('mprod-cls').value='FEM';
@@ -2907,20 +2908,22 @@ function editarProduto(id){abrirModalProduto(id)}
 function salvarProduto(){
   const nome=document.getElementById('mprod-nome').value.trim();
   if(!nome){toast('Informe o nome',false);return}
-  const dados={nome,grupo:document.getElementById('mprod-grupo').value,cls:document.getElementById('mprod-cls').value,tam:document.getElementById('mprod-tam').value,pedido:document.getElementById('mprod-pedido').value,custo:R(document.getElementById('mprod-custo').value),preco:R(document.getElementById('mprod-preco').value),est:parseInt(document.getElementById('mprod-estoque').value)||0,consig:parseInt(document.getElementById('mprod-consig').value)||0};
+  const codigo=document.getElementById('mprod-codigo').value.trim();
+  const dados={nome,grupo:document.getElementById('mprod-grupo').value,cls:document.getElementById('mprod-cls').value,tam:document.getElementById('mprod-tam').value,pedido:document.getElementById('mprod-pedido').value,codigo,custo:R(document.getElementById('mprod-custo').value),preco:R(document.getElementById('mprod-preco').value),est:parseInt(document.getElementById('mprod-estoque').value)||0,consig:parseInt(document.getElementById('mprod-consig').value)||0};
+  const produtos=window.produtos||[];
   if(editProdId){
-    const p=produtos.find(x=>x.id===editProdId);
+    const p=produtos.find(x=>x._fid===editProdId||String(x.id)===String(editProdId));
     if(p){
       Object.assign(p,dados);
       if(typeof dbSave==='function'){
         if(p._fid) dbSave('produtos',p,p._fid);
-        else dbSet('produtos',p.id,p).then(()=>p._fid=String(p.id));
+        else if(typeof dbSet==='function') dbSet('produtos',p.id,p);
       }
       toast('✅ Produto atualizado: '+dados.nome);
     }
   } else {
     const novP={id:genLocalId(),...dados};
-    produtos.push(novP);
+    window.produtos.push(novP);
     if(typeof dbSave==='function') dbSave('produtos',novP).then(fid=>novP._fid=fid);
     toast('✅ Produto cadastrado: '+dados.nome);
   }
@@ -3328,37 +3331,33 @@ window.nfImportarXML = async function(file){
     if(xNome) document.getElementById('nf-fornec').value=xNome.trim();
     if(vNF) document.getElementById('nf-valor').value=parseFloat(vNF).toFixed(2);
 
-    // Extrai itens da NF
+    // Extrai itens da NF com cProd (código) e xProd (descrição)
     const dets=xml.querySelectorAll('det');
     const itensParsed=[];
     dets.forEach(det=>{
       const xProd=det.querySelector('xProd')?.textContent||'';
+      const cProd=det.querySelector('cProd')?.textContent||'';
       const qCom=parseFloat(det.querySelector('qCom')?.textContent||'1');
       const vUnCom=parseFloat(det.querySelector('vUnCom')?.textContent||'0');
       const vProd=parseFloat(det.querySelector('vProd')?.textContent||'0');
-      if(xProd) itensParsed.push({
-        nomeXML: xProd.trim(),
-        qtd: Math.round(qCom),
-        custo: vUnCom||(qCom>0?vProd/qCom:0)
-      });
+      if(xProd) itensParsed.push({nomeXML:xProd.trim(),codigoNF:cProd.trim(),qtd:Math.round(qCom),custo:vUnCom||(qCom>0?vProd/qCom:0)});
     });
 
-    // Função de normalização — remove números, caracteres especiais, tamanhos comuns
+    // Normaliza: remove tamanho no FINAL da string, números e especiais
     function normalizar(s){
       return s.toUpperCase()
-        .replace(/\bP\b|\bM\b|\bG\b|\bGG\b|\bXG\b|\bXGG\b|\bU\b/g,'') // remove tamanhos
-        .replace(/\d+/g,'') // remove números
-        .replace(/[^A-Z\s]/g,'') // remove especiais
-        .replace(/\s+/g,' ').trim();
+        .replace(/\s+(PP|P|M|G|GG|XG|XGG|XL|XXL|U)$/, '')
+        .replace(/\d+/g,'').replace(/[^A-Z\s]/g,'').replace(/\s+/g,' ').trim();
     }
-
-    // Calcula similaridade entre duas strings
-    function similaridade(a, b){
-      const palavrasA = normalizar(a).split(' ').filter(w=>w.length>2);
-      const palavrasB = normalizar(b).split(' ').filter(w=>w.length>2);
-      if(!palavrasA.length||!palavrasB.length) return 0;
-      const match = palavrasA.filter(w=>palavrasB.includes(w)).length;
-      return match / Math.max(palavrasA.length, palavrasB.length);
+    function extrairTamanho(s){
+      const m=s.toUpperCase().match(/\s+(PP|P|M|G|GG|XG|XGG|XL|XXL|U)$/);
+      return m?m[1]:'';
+    }
+    function similaridade(a,b){
+      const wa=normalizar(a).split(' ').filter(w=>w.length>2);
+      const wb=normalizar(b).split(' ').filter(w=>w.length>2);
+      if(!wa.length||!wb.length) return 0;
+      return wa.filter(w=>wb.includes(w)).length/Math.max(wa.length,wb.length);
     }
 
     const produtos=window.produtos||[];
@@ -3366,32 +3365,26 @@ window.nfImportarXML = async function(file){
     let encontrados=0, semMatch=0;
 
     itensParsed.forEach((item,idx)=>{
-      // Tenta match por similaridade (threshold 0.5)
-      let melhorMatch=null, melhorScore=0;
-      produtos.forEach(p=>{
-        const score=similaridade(item.nomeXML, p.nome);
-        if(score>melhorScore){melhorScore=score;melhorMatch=p;}
-      });
+      const tamXML=extrairTamanho(item.nomeXML);
 
-      if(melhorScore>=0.5){
-        nfItens.push({
-          pid:melhorMatch._fid||melhorMatch.id, _fid:melhorMatch._fid,
-          nome:melhorMatch.nome, tam:melhorMatch.tam,
-          qtd:item.qtd, custo:parseFloat(item.custo.toFixed(2)),
-          nomeCompleto:melhorMatch.nome+' ('+melhorMatch.tam+')',
-          xmlNome:item.nomeXML, xmlIdx:idx
-        });
+      // 1. Match por código NF (cProd) — mais confiável
+      let match=item.codigoNF?produtos.find(p=>p.codigo&&p.codigo.trim()===item.codigoNF):null;
+
+      // 2. Match por similaridade de nome + tamanho
+      if(!match){
+        const candidatos=produtos
+          .map(p=>({p,score:similaridade(item.nomeXML,p.nome)}))
+          .filter(x=>x.score>=0.5)
+          .sort((a,b)=>b.score-a.score);
+        if(tamXML) match=candidatos.find(x=>x.p.tam===tamXML)?.p||candidatos[0]?.p;
+        else match=candidatos[0]?.p;
+      }
+
+      if(match){
+        nfItens.push({pid:match._fid||match.id,_fid:match._fid,nome:match.nome,tam:match.tam,qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:match.nome+' ('+match.tam+')',xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx});
         encontrados++;
       } else {
-        // Sem match — marca para seleção manual
-        nfItens.push({
-          pid:null, _fid:null,
-          nome:item.nomeXML, tam:'',
-          qtd:item.qtd, custo:parseFloat(item.custo.toFixed(2)),
-          nomeCompleto:item.nomeXML,
-          xmlNome:item.nomeXML, xmlIdx:idx,
-          semMatch:true
-        });
+        nfItens.push({pid:null,_fid:null,nome:item.nomeXML,tam:tamXML||'',qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:item.nomeXML,xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx,semMatch:true});
         semMatch++;
       }
     });
