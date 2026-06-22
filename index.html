@@ -2883,7 +2883,6 @@ function abrirModalProduto(prodId=null){
       }
       document.getElementById('mprod-cls').value=p.cls||'FEM';
       document.getElementById('mprod-tam').value=p.tam||'';
-      document.getElementById('mprod-pedido').value=p.pedido||'';
       document.getElementById('mprod-codigo').value=p.codigo||'';
       document.getElementById('mprod-custo').value=p.custo||'';
       document.getElementById('mprod-preco').value=p.preco||'';
@@ -2894,7 +2893,10 @@ function abrirModalProduto(prodId=null){
       toast('Produto não encontrado',false);return;
     }
   } else {
-    ['mprod-nome','mprod-tam','mprod-pedido','mprod-codigo','mprod-custo','mprod-preco'].forEach(fid=>document.getElementById(fid).value='');
+    ['mprod-nome','mprod-tam','mprod-codigo','mprod-custo','mprod-preco'].forEach(fid=>{
+      const el=document.getElementById(fid);
+      if(el) el.value='';
+    });
     document.getElementById('mprod-estoque').value=0;
     document.getElementById('mprod-consig').value=0;
     document.getElementById('mprod-cls').value='FEM';
@@ -3329,7 +3331,7 @@ window.nfImportarXML = async function(file){
     if(xNome) document.getElementById('nf-fornec').value=xNome.trim();
     if(vNF) document.getElementById('nf-valor').value=parseFloat(vNF).toFixed(2);
 
-    // Extrai itens da NF com cProd (código) e xProd (descrição)
+    // Extrai itens da NF
     const dets=xml.querySelectorAll('det');
     const itensParsed=[];
     dets.forEach(det=>{
@@ -3341,42 +3343,48 @@ window.nfImportarXML = async function(file){
       if(xProd) itensParsed.push({nomeXML:xProd.trim(),codigoNF:cProd.trim(),qtd:Math.round(qCom),custo:vUnCom||(qCom>0?vProd/qCom:0)});
     });
 
-    // Extrai nome e tamanho do final da descrição do XML
-    // Ex: "CROPPED MANGA LONGA PRETO M" → {nome:"CROPPED MANGA LONGA PRETO", tam:"M"}
+    // Extrai nome e tamanho do final da string
     function extrairNomeTam(s){
       const m=s.trim().toUpperCase().match(/^(.+?)\s+(PP|P|M|G|GG|XG|XGG|XL|XXL|U)$/);
-      if(m) return {nome:m[1].trim(), tam:m[2]};
-      return {nome:s.trim().toUpperCase(), tam:''};
+      return m?{nome:m[1].trim(),tam:m[2]}:{nome:s.trim().toUpperCase(),tam:''};
     }
     function norm(s){return s.toUpperCase().replace(/[^A-Z0-9\s]/g,'').replace(/\s+/g,' ').trim();}
 
     const produtos=window.produtos||[];
+
+    // Índices para busca rápida O(1)
+    const idxCodigo={}; // codigo → produto
+    const idxNomeTam={}; // "NOME|TAM" → produto
+    const idxNome={};   // "NOME" → [produtos]
+    produtos.forEach(p=>{
+      if(p.codigo) idxCodigo[p.codigo.trim()]=p;
+      const chave=norm(p.nome)+'|'+(p.tam||'');
+      idxNomeTam[chave]=p;
+      const n=norm(p.nome);
+      if(!idxNome[n]) idxNome[n]=[];
+      idxNome[n].push(p);
+    });
+
     nfItens=[];
     let encontrados=0, semMatch=0;
 
     itensParsed.forEach((item,idx)=>{
-      const {nome:nomeBase, tam:tamXML}=extrairNomeTam(item.nomeXML);
+      const {nome:nomeBase,tam:tamXML}=extrairNomeTam(item.nomeXML);
       const nNorm=norm(nomeBase);
 
-      // 1. Match por código NF (cProd) — 100% confiável
-      let match=item.codigoNF
-        ? produtos.find(p=>p.codigo&&norm(p.codigo)===norm(item.codigoNF))
-        : null;
+      // 1. Match por código (O(1))
+      let match=item.codigoNF?idxCodigo[item.codigoNF]:null;
 
-      // 2. Match por nome EXATO normalizado + tamanho exato
-      if(!match && tamXML){
-        match=produtos.find(p=>norm(p.nome)===nNorm && p.tam===tamXML);
-      }
+      // 2. Match por nome+tamanho exato (O(1))
+      if(!match && tamXML) match=idxNomeTam[nNorm+'|'+tamXML];
 
-      // 3. Match por nome EXATO sem tamanho (pega o tamanho que vier)
+      // 3. Match por nome exato (O(1))
       if(!match){
-        const porNome=produtos.filter(p=>norm(p.nome)===nNorm);
-        if(porNome.length===1) match=porNome[0];
-        else if(porNome.length>1 && tamXML) match=porNome.find(p=>p.tam===tamXML)||porNome[0];
-        else if(porNome.length>1) match=porNome[0];
+        const lista=idxNome[nNorm]||[];
+        if(lista.length===1) match=lista[0];
+        else if(lista.length>1) match=lista.find(p=>p.tam===tamXML)||lista[0];
       }
 
-      // SEM match = produto não encontrado → seleção manual
       if(match){
         nfItens.push({pid:match._fid||match.id,_fid:match._fid,nome:match.nome,tam:match.tam,qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:match.nome+' ('+match.tam+')',xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx});
         encontrados++;
