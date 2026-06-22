@@ -3302,7 +3302,7 @@ function condConfirmarVenda(){
 
 
 // ====================== IMPORTAÇÃO XML NF-e ======================
-window.nfImportarXML = async function(file){
+window.nfImportarXML = function(file){
   if(!file) return;
   if(!file.name.toLowerCase().endsWith('.xml')){
     toast('Selecione um arquivo .xml da NF-e',false);return;
@@ -3312,93 +3312,95 @@ window.nfImportarXML = async function(file){
   status.style.background='var(--bg3)';
   status.style.color='var(--text2)';
   status.textContent='⏳ Lendo XML...';
-  try {
-    const text = await file.text();
-    const parser = new DOMParser();
-    const xml = parser.parseFromString(text,'text/xml');
-    const infNFe = xml.querySelector('infNFe');
-    if(!infNFe){
-      status.style.background='rgba(226,75,74,.1)';status.style.color='var(--red)';
-      status.textContent='❌ Arquivo inválido — não é uma NF-e válida.';return;
-    }
-    // Dados da NF
-    const nNF   = xml.querySelector('nNF')?.textContent||'';
-    const dhEmi = xml.querySelector('dhEmi')?.textContent||xml.querySelector('dEmi')?.textContent||'';
-    const xNome = xml.querySelector('emit xNome')?.textContent||'Fornecedor';
-    const vNF   = xml.querySelector('vNF')?.textContent||'';
-    if(nNF) document.getElementById('nf-pedido').value=nNF;
-    if(dhEmi){const d=new Date(dhEmi);if(!isNaN(d))document.getElementById('nf-data').value=d.toISOString().split('T')[0];}
-    if(xNome) document.getElementById('nf-fornec').value=xNome.trim();
-    if(vNF) document.getElementById('nf-valor').value=parseFloat(vNF).toFixed(2);
 
-    // Extrai itens da NF
-    const dets=xml.querySelectorAll('det');
-    const itensParsed=[];
-    dets.forEach(det=>{
-      const xProd=det.querySelector('xProd')?.textContent||'';
-      const cProd=det.querySelector('cProd')?.textContent||'';
-      const qCom=parseFloat(det.querySelector('qCom')?.textContent||'1');
-      const vUnCom=parseFloat(det.querySelector('vUnCom')?.textContent||'0');
-      const vProd=parseFloat(det.querySelector('vProd')?.textContent||'0');
-      if(xProd) itensParsed.push({nomeXML:xProd.trim(),codigoNF:cProd.trim(),qtd:Math.round(qCom),custo:vUnCom||(qCom>0?vProd/qCom:0)});
-    });
+  // Yield para o browser renderizar o status antes de processar
+  setTimeout(()=>{
+    const reader=new FileReader();
+    reader.onload=function(e){
+      try {
+        const text=e.target.result;
+        const parser=new DOMParser();
+        const xml=parser.parseFromString(text,'text/xml');
+        const infNFe=xml.querySelector('infNFe');
+        if(!infNFe){
+          status.style.background='rgba(226,75,74,.1)';status.style.color='var(--red)';
+          status.textContent='❌ Arquivo inválido — não é uma NF-e válida.';return;
+        }
+        // Dados da NF
+        const nNF=xml.querySelector('nNF')?.textContent||'';
+        const dhEmi=xml.querySelector('dhEmi')?.textContent||xml.querySelector('dEmi')?.textContent||'';
+        const xNome=xml.querySelector('emit xNome')?.textContent||'Fornecedor';
+        const vNF=xml.querySelector('vNF')?.textContent||'';
+        if(nNF) document.getElementById('nf-pedido').value=nNF;
+        if(dhEmi){const d=new Date(dhEmi);if(!isNaN(d))document.getElementById('nf-data').value=d.toISOString().split('T')[0];}
+        if(xNome) document.getElementById('nf-fornec').value=xNome.trim();
+        if(vNF) document.getElementById('nf-valor').value=parseFloat(vNF).toFixed(2);
 
-    // Extrai nome e tamanho do final da string
-    function extrairNomeTam(s){
-      const m=s.trim().toUpperCase().match(/^(.+?)\s+(PP|P|M|G|GG|XG|XGG|XL|XXL|U)$/);
-      return m?{nome:m[1].trim(),tam:m[2]}:{nome:s.trim().toUpperCase(),tam:''};
-    }
-    function norm(s){return s.toUpperCase().replace(/[^A-Z0-9\s]/g,'').replace(/\s+/g,' ').trim();}
+        // Extrai itens da NF
+        const dets=xml.querySelectorAll('det');
+        const itensParsed=[];
+        dets.forEach(det=>{
+          const xProd=det.querySelector('xProd')?.textContent||'';
+          const cProd=det.querySelector('cProd')?.textContent||'';
+          const qCom=parseFloat(det.querySelector('qCom')?.textContent||'1');
+          const vUnCom=parseFloat(det.querySelector('vUnCom')?.textContent||'0');
+          const vProd=parseFloat(det.querySelector('vProd')?.textContent||'0');
+          if(xProd) itensParsed.push({nomeXML:xProd.trim(),codigoNF:cProd.trim(),qtd:Math.round(qCom),custo:vUnCom||(qCom>0?vProd/qCom:0)});
+        });
 
-    const produtos=window.produtos||[];
+        status.textContent=`⏳ Processando ${itensParsed.length} itens...`;
 
-    // Índices para busca rápida O(1)
-    const idxCodigo={}; // codigo → produto
-    const idxNomeTam={}; // "NOME|TAM" → produto
-    const idxNome={};   // "NOME" → [produtos]
-    produtos.forEach(p=>{
-      if(p.codigo) idxCodigo[p.codigo.trim()]=p;
-      const chave=norm(p.nome)+'|'+(p.tam||'');
-      idxNomeTam[chave]=p;
-      const n=norm(p.nome);
-      if(!idxNome[n]) idxNome[n]=[];
-      idxNome[n].push(p);
-    });
+        function extrairNomeTam(s){
+          const m=s.trim().toUpperCase().match(/^(.+?)\s+(PP|P|M|G|GG|XG|XGG|XL|XXL|U)$/);
+          return m?{nome:m[1].trim(),tam:m[2]}:{nome:s.trim().toUpperCase(),tam:''};
+        }
+        function norm(s){return s.toUpperCase().replace(/[^A-Z0-9\s]/g,'').replace(/\s+/g,' ').trim();}
 
-    nfItens=[];
-    let encontrados=0, semMatch=0;
+        const produtos=window.produtos||[];
+        const idxCodigo={},idxNomeTam={},idxNome={};
+        produtos.forEach(p=>{
+          if(p.codigo) idxCodigo[p.codigo.trim()]=p;
+          idxNomeTam[norm(p.nome)+'|'+(p.tam||'')]=p;
+          const n=norm(p.nome);
+          if(!idxNome[n]) idxNome[n]=[];
+          idxNome[n].push(p);
+        });
 
-    itensParsed.forEach((item,idx)=>{
-      const {nome:nomeBase,tam:tamXML}=extrairNomeTam(item.nomeXML);
-      const nNorm=norm(nomeBase);
+        nfItens=[];
+        let encontrados=0,semMatch=0;
+        itensParsed.forEach((item,idx)=>{
+          const {nome:nomeBase,tam:tamXML}=extrairNomeTam(item.nomeXML);
+          const nNorm=norm(nomeBase);
+          let match=item.codigoNF?idxCodigo[item.codigoNF]:null;
+          if(!match&&tamXML) match=idxNomeTam[nNorm+'|'+tamXML];
+          if(!match){
+            const lista=idxNome[nNorm]||[];
+            if(lista.length===1) match=lista[0];
+            else if(lista.length>1) match=lista.find(p=>p.tam===tamXML)||lista[0];
+          }
+          if(match){
+            nfItens.push({pid:match._fid||match.id,_fid:match._fid,nome:match.nome,tam:match.tam,qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:match.nome+' ('+match.tam+')',xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx});
+            encontrados++;
+          } else {
+            nfItens.push({pid:null,_fid:null,nome:nomeBase,tam:tamXML||'',qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:item.nomeXML,xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx,semMatch:true});
+            semMatch++;
+          }
+        });
 
-      // 1. Match por código (O(1))
-      let match=item.codigoNF?idxCodigo[item.codigoNF]:null;
+        status.style.background='rgba(29,184,126,.1)';status.style.color='var(--teal)';
+        status.innerHTML=`✅ <strong>${itensParsed.length} itens</strong> — ${encontrados} vinculados${semMatch>0?`, <span style="color:var(--amber)">${semMatch} para revisar</span>`:''}`;
+        renderNfItens();
+        setTimeout(()=>nfStep(2),400);
 
-      // 2. Match por nome+tamanho exato (O(1))
-      if(!match && tamXML) match=idxNomeTam[nNorm+'|'+tamXML];
-
-      // 3. Match por nome exato (O(1))
-      if(!match){
-        const lista=idxNome[nNorm]||[];
-        if(lista.length===1) match=lista[0];
-        else if(lista.length>1) match=lista.find(p=>p.tam===tamXML)||lista[0];
+      } catch(err){
+        console.error('[XML]',err);
+        status.style.background='rgba(226,75,74,.1)';status.style.color='var(--red)';
+        status.textContent='❌ Erro: '+err.message;
       }
-
-      if(match){
-        nfItens.push({pid:match._fid||match.id,_fid:match._fid,nome:match.nome,tam:match.tam,qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:match.nome+' ('+match.tam+')',xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx});
-        encontrados++;
-      } else {
-        nfItens.push({pid:null,_fid:null,nome:nomeBase,tam:tamXML||'',qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:item.nomeXML,xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx,semMatch:true});
-        semMatch++;
-      }
-    });
-    renderNfItens();
-  } catch(e){
-    console.error('[XML]',e);
-    status.style.background='rgba(226,75,74,.1)';status.style.color='var(--red)';
-    status.textContent='❌ Erro: '+e.message;
-  }
+    };
+    reader.onerror=()=>{status.textContent='❌ Erro ao ler o arquivo';};
+    reader.readAsText(file,'UTF-8');
+  },50);
 };
 // ====================== IMPORTAÇÃO XML NF-e ======================
 
