@@ -2265,17 +2265,93 @@ function nfAddItem(){
 }
 function renderNfItens(){
   const el=document.getElementById('nf-itens-list');
-  if(!nfItens.length){el.innerHTML='<div class="empty" style="padding:16px"><i class="ti ti-inbox"></i>Nenhum item</div>';return}
-  el.innerHTML=nfItens.map((x,i)=>`
-    <div class="cart-item" style="${x.semMatch?'border-left:3px solid var(--amber);':''}">
-      <div class="cart-item-name">
-        <div style="font-size:12px;font-weight:500;color:${x.semMatch?'var(--amber)':'var(--text)'}">${x.nomeCompleto}</div>
-        ${x.semMatch?`<div style="font-size:10px;color:var(--amber)">⚠ Produto não encontrado no estoque — edite antes de confirmar</div>`:''}
-        <div style="font-size:10px;color:var(--text3)">${x.qtd} un × ${fR(x.custo)} = ${fR(x.qtd*x.custo)}</div>
-      </div>
-      <button class="btn sm ghost" onclick="nfItens.splice(${i},1);renderNfItens()" title="Remover"><i class="ti ti-x"></i></button>
-    </div>`).join('');
+  if(!nfItens.length){el.innerHTML='<div class="empty" style="padding:16px"><i class="ti ti-inbox"></i>Nenhum item adicionado</div>';return}
+  const produtos=window.produtos||[];
+  const gruposProd=[...new Set(produtos.map(p=>p.nome))].sort();
+
+  el.innerHTML=nfItens.map((x,i)=>{
+    if(x.semMatch){
+      // Item sem match — mostra seleção manual
+      const optsNome=gruposProd.map(n=>`<option value="${n}">${n}</option>`).join('');
+      const tamOpts=['P','M','G','GG','XG','U','-'].map(t=>`<option value="${t}" ${x.tam===t?'selected':''}>${t}</option>`).join('');
+      return `<div class="card" style="padding:10px 14px;margin-bottom:8px;border-left:3px solid var(--amber)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
+          <div>
+            <div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace">⚠ Produto não encontrado — selecione manualmente</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">XML: <em>${x.xmlNome}</em></div>
+          </div>
+          <button class="btn sm ghost" onclick="nfItens.splice(${i},1);renderNfItens()" style="color:var(--red);flex-shrink:0"><i class="ti ti-x"></i></button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:end">
+          <div>
+            <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Produto do estoque *</label>
+            <select style="width:100%;padding:7px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:12px"
+              onchange="nfMatchManual(${i}, this.value)">
+              <option value="">— selecione —</option>
+              ${optsNome}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Tamanho</label>
+            <select style="padding:7px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:12px"
+              onchange="nfSetTam(${i}, this.value)">
+              ${tamOpts}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Qtd</label>
+            <input type="number" min="1" value="${x.qtd}" style="width:60px;padding:7px 8px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:12px"
+              onchange="nfItens[${i}].qtd=parseInt(this.value)||1">
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px">${x.qtd} un × ${fR(x.custo)} = ${fR(x.qtd*x.custo)}</div>
+      </div>`;
+    } else {
+      return `<div class="cart-item">
+        <div class="cart-item-name">
+          <div style="font-size:12px;font-weight:500">${x.nomeCompleto}</div>
+          <div style="font-size:10px;color:var(--text3)">XML: ${x.xmlNome||x.nome} · ${x.qtd} un × ${fR(x.custo)} = ${fR(x.qtd*x.custo)}</div>
+        </div>
+        <button class="btn sm ghost" onclick="nfItens.splice(${i},1);renderNfItens()" title="Remover"><i class="ti ti-x"></i></button>
+      </div>`;
+    }
+  }).join('');
 }
+
+function nfMatchManual(i, nomeProd){
+  const produtos=window.produtos||[];
+  const tam=nfItens[i].tam||'';
+  // Encontra produto pelo nome e tamanho
+  const p=produtos.find(x=>x.nome===nomeProd&&(x.tam===tam||!tam))||produtos.find(x=>x.nome===nomeProd);
+  if(p){
+    nfItens[i].pid=p._fid||p.id;
+    nfItens[i]._fid=p._fid;
+    nfItens[i].nome=p.nome;
+    nfItens[i].tam=p.tam;
+    nfItens[i].nomeCompleto=p.nome+' ('+p.tam+')';
+    nfItens[i].semMatch=false;
+    renderNfItens();
+    toast('✅ Vinculado: '+p.nome+' ('+p.tam+')');
+  }
+}
+window.nfMatchManual=nfMatchManual;
+
+function nfSetTam(i, tam){
+  nfItens[i].tam=tam;
+  // Tenta re-fazer o match com o tamanho selecionado
+  if(nfItens[i].nome){
+    const produtos=window.produtos||[];
+    const p=produtos.find(x=>x.nome===nfItens[i].nome&&x.tam===tam);
+    if(p){
+      nfItens[i].pid=p._fid||p.id;
+      nfItens[i]._fid=p._fid;
+      nfItens[i].nomeCompleto=p.nome+' ('+p.tam+')';
+      nfItens[i].semMatch=false;
+      renderNfItens();
+    }
+  }
+}
+window.nfSetTam=nfSetTam;
 function renderNfResumo(){
   const ped=document.getElementById('nf-pedido').value;
   const data=document.getElementById('nf-data').value;
@@ -3251,7 +3327,8 @@ window.nfImportarXML = async function(file){
     if(dhEmi){const d=new Date(dhEmi);if(!isNaN(d))document.getElementById('nf-data').value=d.toISOString().split('T')[0];}
     if(xNome) document.getElementById('nf-fornec').value=xNome.trim();
     if(vNF) document.getElementById('nf-valor').value=parseFloat(vNF).toFixed(2);
-    // Itens
+
+    // Extrai itens da NF
     const dets=xml.querySelectorAll('det');
     const itensParsed=[];
     dets.forEach(det=>{
@@ -3259,29 +3336,68 @@ window.nfImportarXML = async function(file){
       const qCom=parseFloat(det.querySelector('qCom')?.textContent||'1');
       const vUnCom=parseFloat(det.querySelector('vUnCom')?.textContent||'0');
       const vProd=parseFloat(det.querySelector('vProd')?.textContent||'0');
-      if(xProd) itensParsed.push({nome:xProd.trim(),qtd:Math.round(qCom),custo:vUnCom||(qCom>0?vProd/qCom:0)});
+      if(xProd) itensParsed.push({
+        nomeXML: xProd.trim(),
+        qtd: Math.round(qCom),
+        custo: vUnCom||(qCom>0?vProd/qCom:0)
+      });
     });
-    // Match com produtos do estoque
+
+    // Função de normalização — remove números, caracteres especiais, tamanhos comuns
+    function normalizar(s){
+      return s.toUpperCase()
+        .replace(/\bP\b|\bM\b|\bG\b|\bGG\b|\bXG\b|\bXGG\b|\bU\b/g,'') // remove tamanhos
+        .replace(/\d+/g,'') // remove números
+        .replace(/[^A-Z\s]/g,'') // remove especiais
+        .replace(/\s+/g,' ').trim();
+    }
+
+    // Calcula similaridade entre duas strings
+    function similaridade(a, b){
+      const palavrasA = normalizar(a).split(' ').filter(w=>w.length>2);
+      const palavrasB = normalizar(b).split(' ').filter(w=>w.length>2);
+      if(!palavrasA.length||!palavrasB.length) return 0;
+      const match = palavrasA.filter(w=>palavrasB.includes(w)).length;
+      return match / Math.max(palavrasA.length, palavrasB.length);
+    }
+
     const produtos=window.produtos||[];
     nfItens=[];
-    let encontrados=0,semMatch=0;
-    itensParsed.forEach(item=>{
-      const nomeLimpo=item.nome.toUpperCase().replace(/[^A-Z0-9\s]/g,'').trim();
-      const match=produtos.find(p=>{
-        const pn=p.nome.toUpperCase().replace(/[^A-Z0-9\s]/g,'').trim();
-        const palavras=pn.split(' ').filter(w=>w.length>3);
-        return palavras.length>0&&palavras.filter(w=>nomeLimpo.includes(w)).length>=Math.min(2,palavras.length);
+    let encontrados=0, semMatch=0;
+
+    itensParsed.forEach((item,idx)=>{
+      // Tenta match por similaridade (threshold 0.5)
+      let melhorMatch=null, melhorScore=0;
+      produtos.forEach(p=>{
+        const score=similaridade(item.nomeXML, p.nome);
+        if(score>melhorScore){melhorScore=score;melhorMatch=p;}
       });
-      if(match){
-        nfItens.push({pid:match._fid||match.id,_fid:match._fid,nome:match.nome,tam:match.tam,qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:match.nome+' ('+match.tam+')',xmlNome:item.nome});
+
+      if(melhorScore>=0.5){
+        nfItens.push({
+          pid:melhorMatch._fid||melhorMatch.id, _fid:melhorMatch._fid,
+          nome:melhorMatch.nome, tam:melhorMatch.tam,
+          qtd:item.qtd, custo:parseFloat(item.custo.toFixed(2)),
+          nomeCompleto:melhorMatch.nome+' ('+melhorMatch.tam+')',
+          xmlNome:item.nomeXML, xmlIdx:idx
+        });
         encontrados++;
       } else {
-        nfItens.push({pid:null,_fid:null,nome:item.nome,tam:'',qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:item.nome+' ✏️ revisar',xmlNome:item.nome,semMatch:true});
+        // Sem match — marca para seleção manual
+        nfItens.push({
+          pid:null, _fid:null,
+          nome:item.nomeXML, tam:'',
+          qtd:item.qtd, custo:parseFloat(item.custo.toFixed(2)),
+          nomeCompleto:item.nomeXML,
+          xmlNome:item.nomeXML, xmlIdx:idx,
+          semMatch:true
+        });
         semMatch++;
       }
     });
+
     status.style.background='rgba(29,184,126,.1)';status.style.color='var(--teal)';
-    status.innerHTML=`✅ <strong>${itensParsed.length} itens</strong> importados — ${encontrados} com match${semMatch>0?`, <span style="color:var(--amber)">${semMatch} para revisar</span>`:''}`;
+    status.innerHTML=`✅ <strong>${itensParsed.length} itens</strong> importados — ${encontrados} encontrados no estoque${semMatch>0?`, <span style="color:var(--amber)">${semMatch} precisam de seleção manual</span>`:''}`;
     setTimeout(()=>nfStep(2),800);
     renderNfItens();
   } catch(e){
