@@ -2267,91 +2267,88 @@ function renderNfItens(){
   const el=document.getElementById('nf-itens-list');
   if(!nfItens.length){el.innerHTML='<div class="empty" style="padding:16px"><i class="ti ti-inbox"></i>Nenhum item adicionado</div>';return}
   const produtos=window.produtos||[];
-  const gruposProd=[...new Set(produtos.map(p=>p.nome))].sort();
-
+  const nomesUnicos=[...new Set(produtos.map(p=>p.nome))].sort();
   el.innerHTML=nfItens.map((x,i)=>{
     if(x.semMatch){
-      // Item sem match — mostra seleção manual
-      const optsNome=gruposProd.map(n=>`<option value="${n}">${n}</option>`).join('');
-      const tamOpts=['P','M','G','GG','XG','U','-'].map(t=>`<option value="${t}" ${x.tam===t?'selected':''}>${t}</option>`).join('');
+      const tamOpts=['','P','M','G','GG','XG','U'].map(t=>`<option value="${t}" ${x.tam===t?'selected':''}>${t||'—'}</option>`).join('');
+      const nomeSel=nomesUnicos.map(n=>`<option value="${n}" ${x.nome===n?'selected':''}>${n}</option>`).join('');
       return `<div class="card" style="padding:10px 14px;margin-bottom:8px;border-left:3px solid var(--amber)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
           <div>
-            <div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace">⚠ Produto não encontrado — selecione manualmente</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">XML: <em>${x.xmlNome}</em></div>
+            <div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace">⚠ Produto não encontrado no cadastro</div>
+            <div style="font-size:12px;font-weight:600;margin-top:2px">${x.xmlNome}</div>
+            <div style="font-size:10px;color:var(--text3)">${x.qtd} un × ${fR(x.custo)} = ${fR(x.qtd*x.custo)}</div>
           </div>
           <button class="btn sm ghost" onclick="nfItens.splice(${i},1);renderNfItens()" style="color:var(--red);flex-shrink:0"><i class="ti ti-x"></i></button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:end">
+        <div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:end;margin-bottom:8px">
           <div>
-            <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Produto do estoque *</label>
+            <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Vincular a produto existente</label>
             <select style="width:100%;padding:7px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:12px"
-              onchange="nfMatchManual(${i}, this.value)">
+              onchange="nfMatchManual(${i},this.value)">
               <option value="">— selecione —</option>
-              ${optsNome}
+              ${nomeSel}
             </select>
           </div>
           <div>
             <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Tamanho</label>
             <select style="padding:7px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:12px"
-              onchange="nfSetTam(${i}, this.value)">
+              onchange="nfSetTam(${i},this.value)">
               ${tamOpts}
             </select>
           </div>
-          <div>
-            <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Qtd</label>
-            <input type="number" min="1" value="${x.qtd}" style="width:60px;padding:7px 8px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:12px"
-              onchange="nfItens[${i}].qtd=parseInt(this.value)||1">
-          </div>
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:6px">${x.qtd} un × ${fR(x.custo)} = ${fR(x.qtd*x.custo)}</div>
+        <button class="btn sm" style="border-color:var(--teal);color:var(--teal);width:100%;justify-content:center"
+          onclick="nfCadastrarNovo(${i})">
+          <i class="ti ti-plus"></i>Cadastrar como novo produto
+        </button>
       </div>`;
     } else {
       return `<div class="cart-item">
         <div class="cart-item-name">
           <div style="font-size:12px;font-weight:500">${x.nomeCompleto}</div>
-          <div style="font-size:10px;color:var(--text3)">XML: ${x.xmlNome||x.nome} · ${x.qtd} un × ${fR(x.custo)} = ${fR(x.qtd*x.custo)}</div>
+          <div style="font-size:10px;color:var(--text3)">XML: ${x.xmlNome} · ${x.qtd} un × ${fR(x.custo)} = ${fR(x.qtd*x.custo)}</div>
         </div>
         <button class="btn sm ghost" onclick="nfItens.splice(${i},1);renderNfItens()" title="Remover"><i class="ti ti-x"></i></button>
       </div>`;
     }
   }).join('');
 }
-
-function nfMatchManual(i, nomeProd){
+function nfMatchManual(i,nomeProd){
+  if(!nomeProd) return;
   const produtos=window.produtos||[];
   const tam=nfItens[i].tam||'';
-  // Encontra produto pelo nome e tamanho
-  const p=produtos.find(x=>x.nome===nomeProd&&(x.tam===tam||!tam))||produtos.find(x=>x.nome===nomeProd);
-  if(p){
-    nfItens[i].pid=p._fid||p.id;
-    nfItens[i]._fid=p._fid;
-    nfItens[i].nome=p.nome;
-    nfItens[i].tam=p.tam;
-    nfItens[i].nomeCompleto=p.nome+' ('+p.tam+')';
-    nfItens[i].semMatch=false;
-    renderNfItens();
-    toast('✅ Vinculado: '+p.nome+' ('+p.tam+')');
-  }
+  const p=produtos.find(x=>x.nome===nomeProd&&x.tam===tam)||produtos.find(x=>x.nome===nomeProd);
+  if(p){nfItens[i].pid=p._fid||p.id;nfItens[i]._fid=p._fid;nfItens[i].nome=p.nome;nfItens[i].tam=p.tam;nfItens[i].nomeCompleto=p.nome+' ('+p.tam+')';nfItens[i].semMatch=false;renderNfItens();toast('✅ Vinculado: '+p.nome+' ('+p.tam+')');}
 }
 window.nfMatchManual=nfMatchManual;
-
-function nfSetTam(i, tam){
+function nfSetTam(i,tam){
   nfItens[i].tam=tam;
-  // Tenta re-fazer o match com o tamanho selecionado
-  if(nfItens[i].nome){
-    const produtos=window.produtos||[];
-    const p=produtos.find(x=>x.nome===nfItens[i].nome&&x.tam===tam);
-    if(p){
-      nfItens[i].pid=p._fid||p.id;
-      nfItens[i]._fid=p._fid;
-      nfItens[i].nomeCompleto=p.nome+' ('+p.tam+')';
-      nfItens[i].semMatch=false;
-      renderNfItens();
-    }
-  }
+  const produtos=window.produtos||[];
+  const p=produtos.find(x=>x.nome===nfItens[i].nome&&x.tam===tam);
+  if(p){nfItens[i].pid=p._fid||p.id;nfItens[i]._fid=p._fid;nfItens[i].nomeCompleto=p.nome+' ('+p.tam+')';nfItens[i].semMatch=false;renderNfItens();}
 }
 window.nfSetTam=nfSetTam;
+function nfCadastrarNovo(i){
+  const item=nfItens[i];
+  editProdId=null;
+  const produtos=window.produtos||[];
+  const grupos=[...new Set(produtos.map(p=>p.grupo))].sort();
+  const gsel=document.getElementById('mprod-grupo');
+  if(gsel) gsel.innerHTML=grupos.map(g=>`<option value="${g}">${g}</option>`).join('');
+  document.getElementById('mprod-nome').value=item.nome||item.xmlNome||'';
+  document.getElementById('mprod-tam').value=item.tam||'';
+  document.getElementById('mprod-custo').value=item.custo||'';
+  document.getElementById('mprod-preco').value='';
+  document.getElementById('mprod-estoque').value=item.qtd||1;
+  document.getElementById('mprod-consig').value=0;
+  document.getElementById('mprod-codigo').value=item.codigoNF||'';
+  document.getElementById('mprod-cls').value='FEM';
+  document.getElementById('mprod-title').textContent='Novo produto — '+item.xmlNome;
+  document.getElementById('modal-produto').style.display='flex';
+  window._nfPendingIdx=i;
+}
+window.nfCadastrarNovo=nfCadastrarNovo;
 function renderNfResumo(){
   const ped=document.getElementById('nf-pedido').value;
   const data=document.getElementById('nf-data').value;
@@ -2365,6 +2362,7 @@ function renderNfResumo(){
     <div style="margin-top:12px;font-size:12px;color:var(--text2)">Entrada em: ${fD(data)} · Fornecedor: ${document.getElementById('nf-fornec').value}</div>
   `;
 }
+
 function nfConfirmar(){
   if(!nfItens.length){toast('Adicione itens',false);return}
   const produtos=window.produtos||[];
@@ -3343,55 +3341,50 @@ window.nfImportarXML = async function(file){
       if(xProd) itensParsed.push({nomeXML:xProd.trim(),codigoNF:cProd.trim(),qtd:Math.round(qCom),custo:vUnCom||(qCom>0?vProd/qCom:0)});
     });
 
-    // Normaliza: remove tamanho no FINAL da string, números e especiais
-    function normalizar(s){
-      return s.toUpperCase()
-        .replace(/\s+(PP|P|M|G|GG|XG|XGG|XL|XXL|U)$/, '')
-        .replace(/\d+/g,'').replace(/[^A-Z\s]/g,'').replace(/\s+/g,' ').trim();
+    // Extrai nome e tamanho do final da descrição do XML
+    // Ex: "CROPPED MANGA LONGA PRETO M" → {nome:"CROPPED MANGA LONGA PRETO", tam:"M"}
+    function extrairNomeTam(s){
+      const m=s.trim().toUpperCase().match(/^(.+?)\s+(PP|P|M|G|GG|XG|XGG|XL|XXL|U)$/);
+      if(m) return {nome:m[1].trim(), tam:m[2]};
+      return {nome:s.trim().toUpperCase(), tam:''};
     }
-    function extrairTamanho(s){
-      const m=s.toUpperCase().match(/\s+(PP|P|M|G|GG|XG|XGG|XL|XXL|U)$/);
-      return m?m[1]:'';
-    }
-    function similaridade(a,b){
-      const wa=normalizar(a).split(' ').filter(w=>w.length>2);
-      const wb=normalizar(b).split(' ').filter(w=>w.length>2);
-      if(!wa.length||!wb.length) return 0;
-      return wa.filter(w=>wb.includes(w)).length/Math.max(wa.length,wb.length);
-    }
+    function norm(s){return s.toUpperCase().replace(/[^A-Z0-9\s]/g,'').replace(/\s+/g,' ').trim();}
 
     const produtos=window.produtos||[];
     nfItens=[];
     let encontrados=0, semMatch=0;
 
     itensParsed.forEach((item,idx)=>{
-      const tamXML=extrairTamanho(item.nomeXML);
+      const {nome:nomeBase, tam:tamXML}=extrairNomeTam(item.nomeXML);
+      const nNorm=norm(nomeBase);
 
-      // 1. Match por código NF (cProd) — mais confiável
-      let match=item.codigoNF?produtos.find(p=>p.codigo&&p.codigo.trim()===item.codigoNF):null;
+      // 1. Match por código NF (cProd) — 100% confiável
+      let match=item.codigoNF
+        ? produtos.find(p=>p.codigo&&norm(p.codigo)===norm(item.codigoNF))
+        : null;
 
-      // 2. Match por similaridade de nome + tamanho
-      if(!match){
-        const candidatos=produtos
-          .map(p=>({p,score:similaridade(item.nomeXML,p.nome)}))
-          .filter(x=>x.score>=0.5)
-          .sort((a,b)=>b.score-a.score);
-        if(tamXML) match=candidatos.find(x=>x.p.tam===tamXML)?.p||candidatos[0]?.p;
-        else match=candidatos[0]?.p;
+      // 2. Match por nome EXATO normalizado + tamanho exato
+      if(!match && tamXML){
+        match=produtos.find(p=>norm(p.nome)===nNorm && p.tam===tamXML);
       }
 
+      // 3. Match por nome EXATO sem tamanho (pega o tamanho que vier)
+      if(!match){
+        const porNome=produtos.filter(p=>norm(p.nome)===nNorm);
+        if(porNome.length===1) match=porNome[0];
+        else if(porNome.length>1 && tamXML) match=porNome.find(p=>p.tam===tamXML)||porNome[0];
+        else if(porNome.length>1) match=porNome[0];
+      }
+
+      // SEM match = produto não encontrado → seleção manual
       if(match){
         nfItens.push({pid:match._fid||match.id,_fid:match._fid,nome:match.nome,tam:match.tam,qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:match.nome+' ('+match.tam+')',xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx});
         encontrados++;
       } else {
-        nfItens.push({pid:null,_fid:null,nome:item.nomeXML,tam:tamXML||'',qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:item.nomeXML,xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx,semMatch:true});
+        nfItens.push({pid:null,_fid:null,nome:nomeBase,tam:tamXML||'',qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:item.nomeXML,xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx,semMatch:true});
         semMatch++;
       }
     });
-
-    status.style.background='rgba(29,184,126,.1)';status.style.color='var(--teal)';
-    status.innerHTML=`✅ <strong>${itensParsed.length} itens</strong> importados — ${encontrados} encontrados no estoque${semMatch>0?`, <span style="color:var(--amber)">${semMatch} precisam de seleção manual</span>`:''}`;
-    setTimeout(()=>nfStep(2),800);
     renderNfItens();
   } catch(e){
     console.error('[XML]',e);
