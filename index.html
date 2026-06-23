@@ -785,6 +785,38 @@ td.mono{font-family:'DM Mono',monospace;font-size:11px}
     </div>
     <div id="nf-historico-list"><div class="empty"><i class="ti ti-inbox"></i>Nenhuma entrada registrada</div></div>
   </div>
+
+  <!-- CORREÇÃO MANUAL DE ESTOQUE -->
+  <div class="card" style="margin-top:14px;border:1px solid var(--amber)">
+    <div class="card-hd">
+      <span class="card-title"><i class="ti ti-tool" style="color:var(--amber)"></i> Correção manual de estoque</span>
+      <button class="btn sm ghost" style="font-size:11px" onclick="toggleCorrecao()">Expandir</button>
+    </div>
+    <div id="correcao-box" style="display:none;margin-top:10px">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">
+        Use para corrigir estoque de entradas anteriores ao sistema de histórico. Selecione o produto, informe a quantidade e o tipo de movimento.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:end;margin-bottom:8px">
+        <div class="fg">
+          <label style="font-size:10px">Produto</label>
+          <div class="ac-wrap"><input type="text" id="corr-prod-input" placeholder="Buscar produto..." class="ac-input" autocomplete="off" oninput="acSearch('corr-prod',this.value)"><input type="hidden" id="corr-prod"><div id="ac-corr-prod-list" class="ac-dropdown"></div></div>
+        </div>
+        <div class="fg">
+          <label style="font-size:10px">Qtd</label>
+          <input type="number" id="corr-qtd" value="1" min="1" style="width:70px">
+        </div>
+        <div class="fg">
+          <label style="font-size:10px">Tipo</label>
+          <select id="corr-tipo" style="padding:8px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:12px">
+            <option value="remover">− Remover</option>
+            <option value="adicionar">+ Adicionar</option>
+            <option value="definir">= Definir exato</option>
+          </select>
+        </div>
+        <button class="btn primary sm" onclick="aplicarCorrecao()" style="height:38px">Aplicar</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ESTOQUE -->
@@ -2526,7 +2558,15 @@ function renderNfHistorico(){
   const el=document.getElementById('nf-historico-list');
   if(!el) return;
   const list=entradas.filter(e=>!q||(e.pedido||'').toLowerCase().includes(q)||(e.fornec||'').toLowerCase().includes(q));
-  if(!list.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>Nenhuma entrada registrada</div>';return;}
+  if(!list.length){
+    el.innerHTML=`<div style="padding:20px;text-align:center;color:var(--text3)">
+      <i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:8px;opacity:.4"></i>
+      ${q?`Nenhuma entrada com "<strong>${q}</strong>"`:
+      `Nenhuma entrada registrada ainda.<br>
+      <span style="font-size:11px">As entradas confirmadas a partir de agora aparecerão aqui.</span>`}
+    </div>`;
+    return;
+  }
   el.innerHTML=list.map(e=>{
     const eid=e._fid||e.id;
     return `<div class="card" style="margin-bottom:8px;padding:10px 14px;${e.cancelada?'opacity:.5;border-left:3px solid var(--red)':'border-left:3px solid var(--teal)'}">
@@ -2536,13 +2576,15 @@ function renderNfHistorico(){
             ${e.cancelada?'<span style="color:var(--red);font-size:11px;margin-right:6px">❌ ESTORNADA</span>':''}
             Pedido #${e.pedido||'—'}
           </div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px">${fD(e.data)} · ${e.fornec||'—'} · ${e.itens?.length||0} itens · Total custo: ${fR(e.total||0)}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">${fD(e.data)} · ${e.fornec||'—'} · ${e.itens?.length||0} itens · Total: ${fR(e.total||0)}</div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
             ${(e.itens||[]).map(i=>`<span style="background:var(--bg3);padding:2px 8px;border-radius:20px;font-size:11px">${i.nome}${i.tam&&i.tam!=='-'?' ('+i.tam+')':''} ×${i.qtd}</span>`).join('')}
           </div>
         </div>
         <div style="flex-shrink:0">
-          ${!e.cancelada?`<button class="btn sm ghost" style="color:var(--red)" onclick="estornarNF('${eid}')"><i class="ti ti-arrow-back-up"></i>Estornar</button>`:'<span style="font-size:11px;color:var(--red)">Estornada</span>'}
+          ${!e.cancelada
+            ?`<button class="btn sm ghost" style="color:var(--red)" onclick="estornarNF('${eid}')"><i class="ti ti-arrow-back-up"></i>Estornar</button>`
+            :'<span style="font-size:11px;color:var(--red)">✗ Estornada</span>'}
         </div>
       </div>
     </div>`;
@@ -2576,6 +2618,38 @@ function estornarNF(id){
 }
 window.estornarNF=estornarNF;
 window.renderNfHistorico=renderNfHistorico;
+
+function toggleCorrecao(){
+  const box=document.getElementById('correcao-box');
+  const aberto=box.style.display!=='none';
+  box.style.display=aberto?'none':'block';
+  if(!aberto){
+    acRegister('corr-prod',(window.produtos||[]).sort((a,b)=>a.nome.localeCompare(b.nome))
+      .map(p=>({value:p._fid||String(p.id),label:p.nome+(p.tam&&p.tam!=='-'?' ('+p.tam+')':''),sub:p.grupo+' · Est: '+p.est})),()=>{});
+  }
+}
+window.toggleCorrecao=toggleCorrecao;
+
+function aplicarCorrecao(){
+  const pid=document.getElementById('corr-prod').value;
+  const qtd=parseInt(document.getElementById('corr-qtd').value)||0;
+  const tipo=document.getElementById('corr-tipo').value;
+  if(!pid){toast('Selecione um produto',false);return;}
+  if(qtd<=0){toast('Informe uma quantidade válida',false);return;}
+  const p=(window.produtos||[]).find(x=>x._fid===pid||String(x.id)===String(pid));
+  if(!p){toast('Produto não encontrado',false);return;}
+  const antes=p.est;
+  if(tipo==='remover') p.est=Math.max(0,(p.est||0)-qtd);
+  else if(tipo==='adicionar') p.est=(p.est||0)+qtd;
+  else p.est=qtd; // definir exato
+  if(typeof dbSave==='function'&&p._fid) dbSave('produtos',p,p._fid);
+  renderEstoque();
+  toast(`✅ ${p.nome}${p.tam&&p.tam!=='-'?' ('+p.tam+')':''}: ${antes} → ${p.est} un`);
+  document.getElementById('corr-prod-input').value='';
+  document.getElementById('corr-prod').value='';
+  document.getElementById('corr-qtd').value='1';
+}
+window.aplicarCorrecao=aplicarCorrecao;
 // ====================== HISTÓRICO NF ======================
 
 // ====================== ESTOQUE ======================
@@ -3827,80 +3901,89 @@ function atualizarPreviewAjuste(){
 
 function registrarAjuste(){
   const produtos=window.produtos||[];
-  const pid = document.getElementById('ajuste-prod').value;
-  if(!pid){ toast('Selecione um produto', false); return; }
-  if(!ajusteMotivoSel){ toast('Selecione o motivo do ajuste', false); return; }
-  const obs = document.getElementById('ajuste-obs').value.trim();
-  if(!obs){ toast('Preencha a observação / descrição', false); return; }
-  const p = produtos.find(x=>x._fid===pid||String(x.id)===String(pid));
-  if(!p){ toast('Produto não encontrado', false); return; }
-  const qtd = Math.max(1, parseInt(document.getElementById('ajuste-qtd').value)||1);
-  const custo = R(document.getElementById('ajuste-custo').value)||p.custo;
-  const preco = R(document.getElementById('ajuste-preco').value)||p.preco;
-  const tam = document.getElementById('ajuste-tam').value||p.tam||'-';
-  const tipo = document.getElementById('ajuste-tipo').value;
-  const op = document.getElementById('ajuste-op').value;
-  const data = document.getElementById('ajuste-data').value || today();
+  const pid=document.getElementById('ajuste-prod').value;
+  if(!pid){toast('Selecione um produto',false);return;}
+  if(!ajusteMotivoSel){toast('Selecione o motivo do ajuste',false);return;}
+  const obs=document.getElementById('ajuste-obs').value.trim();
+  if(!obs){toast('Preencha a observação / descrição',false);return;}
 
-  if(tipo==='saida' && p.est < qtd){
+  // Busca produto pelo _fid OU id
+  const p=produtos.find(x=>x._fid===pid||String(x.id)===String(pid));
+  if(!p){
+    toast('Produto não encontrado — tente selecionar novamente',false);
+    console.error('[ajuste] pid não encontrado:',pid, 'produtos sample:', produtos.slice(0,3).map(x=>({_fid:x._fid,id:x.id})));
+    return;
+  }
+
+  const qtd=Math.max(1,parseInt(document.getElementById('ajuste-qtd').value)||1);
+  const custo=R(document.getElementById('ajuste-custo').value)||p.custo;
+  const preco=R(document.getElementById('ajuste-preco').value)||p.preco;
+  const tam=document.getElementById('ajuste-tam').value||p.tam||'-';
+  const tipo=document.getElementById('ajuste-tipo').value;
+  const op=document.getElementById('ajuste-op').value;
+  const data=document.getElementById('ajuste-data').value||today();
+
+  if(tipo==='saida'&&p.est<qtd){
     if(!confirm(`Estoque atual é ${p.est} un. Deseja baixar ${qtd} mesmo assim?`)) return;
   }
 
   // Atualiza tamanho e preço se informados
-  if(tam && tam!=='-' && (!p.tam||p.tam==='-')) p.tam=tam;
-  if(preco>0 && p.preco===0) p.preco=preco;
+  if(tam&&tam!=='-'&&(!p.tam||p.tam==='-')) p.tam=tam;
+  if(preco>0&&p.preco===0) p.preco=preco;
 
-  // Atualiza estoque do produto
-  const estoqueAntes = p.est;
-  if(tipo==='saida'){
-    p.est = Math.max(0, p.est - qtd);
-  } else {
-    p.est = p.est + qtd;
-  }
+  // Atualiza estoque
+  const estoqueAntes=p.est;
+  if(tipo==='saida') p.est=Math.max(0,p.est-qtd);
+  else p.est=(p.est||0)+qtd;
+
+  // Salva produto no Firebase
   if(typeof dbSave==='function'){
-    if(p._fid) dbSave('produtos', p, p._fid);
-    else if(typeof dbSet==='function') dbSet('produtos', p.id, p);
+    if(p._fid) dbSave('produtos',p,p._fid);
+    else if(typeof dbSet==='function') dbSet('produtos',p.id,p);
   }
 
   // Registra o ajuste
-  const m = motivoLabels[ajusteMotivoSel];
-  const ajuste = {
-    id: genLocalId(),
-    data, op,
-    pid: p._fid||p.id,
-    prod: p.nome + (tam&&tam!=='-'?' ('+tam+')':''),
-    grupo: p.grupo,
-    motivo: ajusteMotivoSel,
-    motivoLabel: m.label,
-    tipo, qtd, custo, preco,
-    tam,
-    custoTotal: tipo==='saida' ? custo * qtd : 0,
+  const m=motivoLabels[ajusteMotivoSel];
+  const ajuste={
+    id:genLocalId(),
+    data,op,
+    pid:p._fid||p.id,
+    prod:p.nome+(tam&&tam!=='-'?' ('+tam+')':''),
+    grupo:p.grupo,
+    motivo:ajusteMotivoSel,
+    motivoLabel:m.label,
+    tipo,qtd,custo,preco,tam,
+    custoTotal:tipo==='saida'?custo*qtd:0,
     estoqueAntes,
-    estoqueDepois: p.est,
+    estoqueDepois:p.est,
     obs
   };
-  ajustes.unshift(ajuste);
+
+  // Usa window.ajustes para garantir acesso correto
+  if(!window.ajustes) window.ajustes=[];
+  window.ajustes.unshift(ajuste);
+
   if(typeof dbSave==='function'){
-    const {id,...ajData} = ajuste;
-    dbSave('ajustes', {...ajData, localId:id}).then(fid=>ajuste._fid=fid);
+    const{id,...ajData}=ajuste;
+    dbSave('ajustes',{...ajData,localId:id}).then(fid=>ajuste._fid=fid);
   }
 
   // Limpa formulário
-  document.getElementById('ajuste-prod-input').value = '';
-  document.getElementById('ajuste-prod').value = '';
-  document.getElementById('ajuste-qtd').value = 1;
-  document.getElementById('ajuste-custo').value = '';
-  document.getElementById('ajuste-preco').value = '';
-  document.getElementById('ajuste-tam').value = '';
-  document.getElementById('ajuste-obs').value = '';
-  document.getElementById('ajuste-preview').style.display = 'none';
+  document.getElementById('ajuste-prod-input').value='';
+  document.getElementById('ajuste-prod').value='';
+  document.getElementById('ajuste-qtd').value=1;
+  document.getElementById('ajuste-custo').value='';
+  document.getElementById('ajuste-preco').value='';
+  document.getElementById('ajuste-tam').value='';
+  document.getElementById('ajuste-obs').value='';
+  document.getElementById('ajuste-preview').style.display='none';
+  ajusteMotivoSel=null;
   document.querySelectorAll('.motivo-opt').forEach(b=>b.classList.remove('sel'));
-  ajusteMotivoSel = '';
 
   renderAjustes();
-  renderKpiAjustes();
+  renderEstoque();
   updateBadges();
-  toast(`✅ Ajuste registrado: ${tipo==='saida'?'−':'+'} ${qtd} un · ${p.nome}`);
+  toast(`✅ Ajuste registrado: ${p.nome} ${tipo==='saida'?'−':'+'} ${qtd} un → ${p.est} un`);
 }
 
 function renderKpiAjustes(){
