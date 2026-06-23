@@ -3880,23 +3880,37 @@ function selecionaMotivo(motivo, el){
 
 function atualizarPreviewAjuste(){
   const produtos=window.produtos||[];
-  const pid = document.getElementById('ajuste-prod').value;
-  const p = produtos.find(x=>x._fid===pid||String(x.id)===String(pid));
-  if(!p || !ajusteMotivoSel) { document.getElementById('ajuste-preview').style.display='none'; return; }
-  const qtd = parseInt(document.getElementById('ajuste-qtd').value)||1;
-  const custo = R(document.getElementById('ajuste-custo').value)||p.custo;
-  const tipo = document.getElementById('ajuste-tipo').value;
-  const tam = document.getElementById('ajuste-tam').value||p.tam||'-';
-  const m = motivoLabels[ajusteMotivoSel];
-  const custoTotal = custo * qtd;
-  const novoEst = tipo==='saida' ? Math.max(0, p.est - qtd) : p.est + qtd;
-  document.getElementById('ajuste-preview').style.display = 'block';
-  document.getElementById('ajuste-preview-content').innerHTML = `
-    <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Produto</span><span style="font-weight:600">${p.nome} (${tam})</span></div>
+  const pid=document.getElementById('ajuste-prod').value;
+  const pBase=produtos.find(x=>x._fid===pid||String(x.id)===String(pid));
+  if(!pBase||!ajusteMotivoSel){document.getElementById('ajuste-preview').style.display='none';return;}
+  const qtd=parseInt(document.getElementById('ajuste-qtd').value)||1;
+  const custo=R(document.getElementById('ajuste-custo').value)||pBase.custo;
+  const tipo=document.getElementById('ajuste-tipo').value;
+  const tamSel=document.getElementById('ajuste-tam').value||'';
+  const tam=tamSel||pBase.tam||'-';
+  const m=motivoLabels[ajusteMotivoSel];
+
+  // Busca a linha CORRETA pelo nome + tamanho selecionado
+  let pAlvo=pBase;
+  if(tamSel&&tamSel!==pBase.tam){
+    const linhaComTam=produtos.find(x=>x.nome===pBase.nome&&x.tam===tamSel);
+    if(linhaComTam) pAlvo=linhaComTam;
+    else pAlvo={...pBase,tam:tamSel,est:0}; // linha nova a ser criada
+  }
+
+  const estoqueAtual=pAlvo.est||0;
+  const novoEst=tipo==='saida'?Math.max(0,estoqueAtual-qtd):estoqueAtual+qtd;
+  const custoTotal=custo*qtd;
+
+  document.getElementById('ajuste-preview').style.display='block';
+  document.getElementById('ajuste-preview-content').innerHTML=`
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Produto</span><span style="font-weight:600">${pBase.nome} (${tam})</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Estoque atual</span><span style="font-family:'DM Mono',monospace">${estoqueAtual} un</span></div>
     <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Motivo</span><span style="color:${m.color};font-weight:600">${m.label}</span></div>
     <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Movimento</span><span style="color:${tipo==='saida'?'var(--red)':'var(--teal)'}">${tipo==='saida'?'− '+qtd+' un (baixa)':'+ '+qtd+' un (acréscimo)'}</span></div>
-    <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Custo baixado</span><span style="font-family:'DM Mono',monospace">${tipo==='saida'?fR(custoTotal):'—'}</span></div>
-    <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);margin-top:6px;padding-top:6px"><span style="color:var(--text3)">Estoque após ajuste</span><span style="font-weight:700;color:${novoEst===0?'var(--red)':'var(--text)'}">${novoEst} un</span></div>`;
+    ${tipo==='saida'?`<div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Custo baixado</span><span style="font-family:'DM Mono',monospace">${fR(custoTotal)}</span></div>`:''}
+    <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);margin-top:6px;padding-top:6px"><span style="color:var(--text3);font-weight:600">Estoque após ajuste</span><span style="font-weight:700;color:${novoEst===0?'var(--red)':'var(--teal)'}">${novoEst} un</span></div>
+    ${!tamSel&&tipo==='entrada'?'':''}`;
 }
 
 function registrarAjuste(){
@@ -3907,68 +3921,108 @@ function registrarAjuste(){
   const obs=document.getElementById('ajuste-obs').value.trim();
   if(!obs){toast('Preencha a observação / descrição',false);return;}
 
-  // Busca produto pelo _fid OU id
-  const p=produtos.find(x=>x._fid===pid||String(x.id)===String(pid));
-  if(!p){
-    toast('Produto não encontrado — tente selecionar novamente',false);
-    console.error('[ajuste] pid não encontrado:',pid, 'produtos sample:', produtos.slice(0,3).map(x=>({_fid:x._fid,id:x.id})));
-    return;
-  }
-
   const qtd=Math.max(1,parseInt(document.getElementById('ajuste-qtd').value)||1);
-  const custo=R(document.getElementById('ajuste-custo').value)||p.custo;
-  const preco=R(document.getElementById('ajuste-preco').value)||p.preco;
-  const tam=document.getElementById('ajuste-tam').value||p.tam||'-';
   const tipo=document.getElementById('ajuste-tipo').value;
+  const tamSel=document.getElementById('ajuste-tam').value||'';
   const op=document.getElementById('ajuste-op').value;
   const data=document.getElementById('ajuste-data').value||today();
 
-  if(tipo==='saida'&&p.est<qtd){
-    if(!confirm(`Estoque atual é ${p.est} un. Deseja baixar ${qtd} mesmo assim?`)) return;
+  // Busca produto pelo _fid OU id
+  let p=produtos.find(x=>x._fid===pid||String(x.id)===String(pid));
+
+  if(!p && tipo==='entrada'){
+    toast('Produto não encontrado. Use o Estoque → Editar para corrigir manualmente.',false);
+    return;
+  }
+  if(!p){toast('Produto não encontrado',false);return;}
+
+  const custo=R(document.getElementById('ajuste-custo').value)||p.custo;
+  const preco=R(document.getElementById('ajuste-preco').value)||p.preco;
+  const tam=tamSel||p.tam||'-';
+
+  // Para ENTRADA: se o tamanho selecionado é diferente do produto base,
+  // busca ou cria linha específica para esse tamanho
+  let prodAlvo=p;
+  if(tipo==='entrada' && tamSel && tamSel!=='-' && tamSel!==p.tam){
+    // Procura linha com mesmo nome e tamanho selecionado
+    const linhaExistente=produtos.find(x=>x.nome===p.nome&&x.tam===tamSel);
+    if(linhaExistente){
+      prodAlvo=linhaExistente;
+    } else {
+      // Cria nova linha para este tamanho
+      const novaLinha={
+        id:genLocalId(),
+        nome:p.nome, grupo:p.grupo, cls:p.cls,
+        tam:tamSel, codigo:p.codigo||'',
+        custo, preco:p.preco||0,
+        est:0, consig:0, pedido:p.pedido||''
+      };
+      window.produtos.push(novaLinha);
+      if(typeof dbSave==='function'){
+        dbSave('produtos',novaLinha).then(fid=>{
+          novaLinha._fid=fid;
+          novaLinha.est=qtd;
+          dbSave('produtos',novaLinha,fid);
+        });
+      }
+      // Registra ajuste para a nova linha
+      const m=motivoLabels[ajusteMotivoSel];
+      const aj={id:genLocalId(),data,op,pid:novaLinha.id,prod:novaLinha.nome+' ('+tamSel+')',grupo:novaLinha.grupo,motivo:ajusteMotivoSel,motivoLabel:m.label,tipo,qtd,custo,preco,tam:tamSel,custoTotal:0,estoqueAntes:0,estoqueDepois:qtd,obs};
+      if(!window.ajustes)window.ajustes=[];
+      window.ajustes.unshift(aj);
+      if(typeof dbSave==='function'){const{id,...d}=aj;dbSave('ajustes',{...d,localId:id});}
+      // Limpa form
+      document.getElementById('ajuste-prod-input').value='';
+      document.getElementById('ajuste-prod').value='';
+      document.getElementById('ajuste-qtd').value=1;
+      document.getElementById('ajuste-custo').value='';
+      document.getElementById('ajuste-preco').value='';
+      document.getElementById('ajuste-tam').value='';
+      document.getElementById('ajuste-obs').value='';
+      document.getElementById('ajuste-preview').style.display='none';
+      ajusteMotivoSel=null;
+      document.querySelectorAll('.motivo-opt').forEach(b=>b.classList.remove('sel'));
+      renderAjustes();renderEstoque();updateBadges();
+      toast(`✅ Nova linha criada: ${novaLinha.nome} (${tamSel}) → ${qtd} un`);
+      return;
+    }
   }
 
-  // Atualiza tamanho e preço se informados
-  if(tam&&tam!=='-'&&(!p.tam||p.tam==='-')) p.tam=tam;
-  if(preco>0&&p.preco===0) p.preco=preco;
+  if(tipo==='saida'&&prodAlvo.est<qtd){
+    if(!confirm(`Estoque atual é ${prodAlvo.est} un. Deseja baixar ${qtd} mesmo assim?`)) return;
+  }
 
-  // Atualiza estoque
-  const estoqueAntes=p.est;
-  if(tipo==='saida') p.est=Math.max(0,p.est-qtd);
-  else p.est=(p.est||0)+qtd;
+  // Atualiza tamanho e preço se necessário
+  if(tam&&tam!=='-'&&(!prodAlvo.tam||prodAlvo.tam==='-')) prodAlvo.tam=tam;
+  if(preco>0&&prodAlvo.preco===0) prodAlvo.preco=preco;
 
-  // Salva produto no Firebase
+  const estoqueAntes=prodAlvo.est;
+  if(tipo==='saida') prodAlvo.est=Math.max(0,prodAlvo.est-qtd);
+  else prodAlvo.est=(prodAlvo.est||0)+qtd;
+
   if(typeof dbSave==='function'){
-    if(p._fid) dbSave('produtos',p,p._fid);
-    else if(typeof dbSet==='function') dbSet('produtos',p.id,p);
+    if(prodAlvo._fid) dbSave('produtos',prodAlvo,prodAlvo._fid);
+    else if(typeof dbSet==='function') dbSet('produtos',prodAlvo.id,prodAlvo);
   }
 
-  // Registra o ajuste
   const m=motivoLabels[ajusteMotivoSel];
   const ajuste={
-    id:genLocalId(),
-    data,op,
-    pid:p._fid||p.id,
-    prod:p.nome+(tam&&tam!=='-'?' ('+tam+')':''),
-    grupo:p.grupo,
-    motivo:ajusteMotivoSel,
-    motivoLabel:m.label,
+    id:genLocalId(),data,op,
+    pid:prodAlvo._fid||prodAlvo.id,
+    prod:prodAlvo.nome+(tam&&tam!=='-'?' ('+tam+')':''),
+    grupo:prodAlvo.grupo,
+    motivo:ajusteMotivoSel,motivoLabel:m.label,
     tipo,qtd,custo,preco,tam,
     custoTotal:tipo==='saida'?custo*qtd:0,
-    estoqueAntes,
-    estoqueDepois:p.est,
-    obs
+    estoqueAntes,estoqueDepois:prodAlvo.est,obs
   };
-
-  // Usa window.ajustes para garantir acesso correto
-  if(!window.ajustes) window.ajustes=[];
+  if(!window.ajustes)window.ajustes=[];
   window.ajustes.unshift(ajuste);
-
   if(typeof dbSave==='function'){
     const{id,...ajData}=ajuste;
     dbSave('ajustes',{...ajData,localId:id}).then(fid=>ajuste._fid=fid);
   }
 
-  // Limpa formulário
   document.getElementById('ajuste-prod-input').value='';
   document.getElementById('ajuste-prod').value='';
   document.getElementById('ajuste-qtd').value=1;
@@ -3979,11 +4033,8 @@ function registrarAjuste(){
   document.getElementById('ajuste-preview').style.display='none';
   ajusteMotivoSel=null;
   document.querySelectorAll('.motivo-opt').forEach(b=>b.classList.remove('sel'));
-
-  renderAjustes();
-  renderEstoque();
-  updateBadges();
-  toast(`✅ Ajuste registrado: ${p.nome} ${tipo==='saida'?'−':'+'} ${qtd} un → ${p.est} un`);
+  renderAjustes();renderEstoque();updateBadges();
+  toast(`✅ ${prodAlvo.nome} (${tam}): ${estoqueAntes} → ${prodAlvo.est} un`);
 }
 
 function renderKpiAjustes(){
