@@ -2265,25 +2265,28 @@ function nfAddItem(){
 }
 function renderNfItens(){
   const el=document.getElementById('nf-itens-list');
-  if(!nfItens.length){el.innerHTML='<div class="empty" style="padding:16px"><i class="ti ti-inbox"></i>Nenhum item adicionado</div>';return}
+  if(!nfItens.length){el.innerHTML='<div class="empty" style="padding:16px"><i class="ti ti-inbox"></i>Nenhum item</div>';return;}
   const produtos=window.produtos||[];
   const nomesUnicos=[...new Set(produtos.map(p=>p.nome))].sort();
   el.innerHTML=nfItens.map((x,i)=>{
-    if(x.semMatch){
+    if(!x.pid){
+      // Item sem vínculo — mostra dados do XML + seleção manual
       const tamOpts=['','P','M','G','GG','XG','U'].map(t=>`<option value="${t}" ${x.tam===t?'selected':''}>${t||'—'}</option>`).join('');
       const nomeSel=nomesUnicos.map(n=>`<option value="${n}" ${x.nome===n?'selected':''}>${n}</option>`).join('');
       return `<div class="card" style="padding:10px 14px;margin-bottom:8px;border-left:3px solid var(--amber)">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <div>
-            <div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;font-family:'DM Mono',monospace">⚠ Produto não encontrado no cadastro</div>
-            <div style="font-size:12px;font-weight:600;margin-top:2px">${x.xmlNome}</div>
-            <div style="font-size:10px;color:var(--text3)">${x.qtd} un × ${fR(x.custo)} = ${fR(x.qtd*x.custo)}</div>
+            <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">
+              ${x.codigoNF?`<span style="background:var(--bg4);padding:2px 6px;border-radius:4px;margin-right:6px">${x.codigoNF}</span>`:''}
+              ${x.qtd}un · ${fR(x.custo)}/un
+            </div>
+            <div style="font-size:13px;font-weight:600;margin-top:3px">${x.xmlNome}</div>
           </div>
-          <button class="btn sm ghost" onclick="nfItens.splice(${i},1);renderNfItens()" style="color:var(--red);flex-shrink:0"><i class="ti ti-x"></i></button>
+          <button class="btn sm ghost" onclick="nfItens.splice(${i},1);renderNfItens()" style="color:var(--red)"><i class="ti ti-x"></i></button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:end;margin-bottom:8px">
+        <div style="display:grid;grid-template-columns:1fr auto;gap:6px;margin-bottom:8px">
           <div>
-            <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Vincular a produto existente</label>
+            <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Produto do estoque</label>
             <select style="width:100%;padding:7px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:12px"
               onchange="nfMatchManual(${i},this.value)">
               <option value="">— selecione —</option>
@@ -2298,18 +2301,22 @@ function renderNfItens(){
             </select>
           </div>
         </div>
-        <button class="btn sm" style="border-color:var(--teal);color:var(--teal);width:100%;justify-content:center"
-          onclick="nfCadastrarNovo(${i})">
+        <button class="btn sm" style="border-color:var(--teal);color:var(--teal);width:100%;justify-content:center" onclick="nfCadastrarNovo(${i})">
           <i class="ti ti-plus"></i>Cadastrar como novo produto
         </button>
       </div>`;
     } else {
-      return `<div class="cart-item">
+      return `<div class="cart-item" style="border-left:3px solid var(--teal)">
         <div class="cart-item-name">
-          <div style="font-size:12px;font-weight:500">${x.nomeCompleto}</div>
-          <div style="font-size:10px;color:var(--text3)">XML: ${x.xmlNome} · ${x.qtd} un × ${fR(x.custo)} = ${fR(x.qtd*x.custo)}</div>
+          <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">
+            ${x.codigoNF?`<span style="background:var(--bg4);padding:2px 6px;border-radius:4px;margin-right:4px">${x.codigoNF}</span>`:''}
+            ${x.qtd}un · ${fR(x.custo)}/un
+          </div>
+          <div style="font-size:12px;font-weight:600">${x.nomeCompleto}</div>
+          <div style="font-size:10px;color:var(--text3)">XML: ${x.xmlNome}</div>
         </div>
-        <button class="btn sm ghost" onclick="nfItens.splice(${i},1);renderNfItens()" title="Remover"><i class="ti ti-x"></i></button>
+        <button class="btn sm ghost" onclick="nfItens[${i}].pid=null;nfItens[${i}].semMatch=true;renderNfItens()" title="Desvincular" style="color:var(--amber)"><i class="ti ti-unlink"></i></button>
+        <button class="btn sm ghost" onclick="nfItens.splice(${i},1);renderNfItens()" title="Remover" style="color:var(--red)"><i class="ti ti-x"></i></button>
       </div>`;
     }
   }).join('');
@@ -2331,37 +2338,20 @@ function nfSetTam(i,tam){
 window.nfSetTam=nfSetTam;
 function nfCadastrarNovo(i){
   const item=nfItens[i];
-  editProdId=null;
-  const produtos=window.produtos||[];
-  const grupos=[...new Set(produtos.map(p=>p.grupo))].sort();
-  const gsel=document.getElementById('mprod-grupo');
-  if(gsel) gsel.innerHTML=grupos.map(g=>`<option value="${g}">${g}</option>`).join('');
-  document.getElementById('mprod-nome').value=item.nome||item.xmlNome||'';
-  document.getElementById('mprod-tam').value=item.tam||'';
-  document.getElementById('mprod-custo').value=item.custo||'';
-  document.getElementById('mprod-preco').value='';
-  document.getElementById('mprod-estoque').value=item.qtd||1;
-  document.getElementById('mprod-consig').value=0;
-  document.getElementById('mprod-codigo').value=item.codigoNF||'';
-  document.getElementById('mprod-cls').value='FEM';
-  document.getElementById('mprod-title').textContent='Novo produto — '+item.xmlNome;
-  document.getElementById('modal-produto').style.display='flex';
   window._nfPendingIdx=i;
+  // Usa abrirModalProduto para novo produto (garante select correto)
+  abrirModalProduto(null);
+  // Preenche com dados do XML após abrir
+  setTimeout(()=>{
+    document.getElementById('mprod-nome').value=item.nome||'';
+    document.getElementById('mprod-tam').value=item.tam||'';
+    document.getElementById('mprod-custo').value=item.custo||'';
+    document.getElementById('mprod-codigo').value=item.codigoNF||'';
+    document.getElementById('mprod-estoque').value=item.qtd||1;
+    document.getElementById('mprod-title').textContent='Novo produto — '+item.xmlNome;
+  },10);
 }
 window.nfCadastrarNovo=nfCadastrarNovo;
-function renderNfResumo(){
-  const ped=document.getElementById('nf-pedido').value;
-  const data=document.getElementById('nf-data').value;
-  const total=nfItens.reduce((a,x)=>a+x.qtd*x.custo,0);
-  document.getElementById('nf-resumo').innerHTML=`
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-      <div class="kpi b"><div class="kpi-lbl">Pedido PWRD</div><div class="kpi-val" style="font-size:18px">#${ped}</div></div>
-      <div class="kpi g"><div class="kpi-lbl">Total custo NF</div><div class="kpi-val" style="font-size:18px">${fR(total)}</div></div>
-    </div>
-    <div class="card" style="padding:0"><table><thead><tr><th>Produto</th><th>Tam.</th><th>Qtd</th><th>Custo unit.</th><th>Subtotal</th></tr></thead><tbody>${nfItens.map(x=>`<tr><td>${x.nome}</td><td>${x.tam}</td><td>${x.qtd}</td><td class="r mono">${fR(x.custo)}</td><td class="r mono">${fR(x.qtd*x.custo)}</td></tr>`).join('')}</tbody></table></div>
-    <div style="margin-top:12px;font-size:12px;color:var(--text2)">Entrada em: ${fD(data)} · Fornecedor: ${document.getElementById('nf-fornec').value}</div>
-  `;
-}
 
 function nfConfirmar(){
   if(!nfItens.length){toast('Adicione itens',false);return}
@@ -3304,103 +3294,61 @@ function condConfirmarVenda(){
 // ====================== IMPORTAÇÃO XML NF-e ======================
 window.nfImportarXML = function(file){
   if(!file) return;
-  if(!file.name.toLowerCase().endsWith('.xml')){
-    toast('Selecione um arquivo .xml da NF-e',false);return;
-  }
   const status=document.getElementById('nf-xml-status');
   status.style.display='block';
   status.style.background='var(--bg3)';
   status.style.color='var(--text2)';
   status.textContent='⏳ Lendo XML...';
-
-  // Yield para o browser renderizar o status antes de processar
-  setTimeout(()=>{
-    const reader=new FileReader();
-    reader.onload=function(e){
-      try {
-        const text=e.target.result;
-        const parser=new DOMParser();
-        const xml=parser.parseFromString(text,'text/xml');
-        const infNFe=xml.querySelector('infNFe');
-        if(!infNFe){
-          status.style.background='rgba(226,75,74,.1)';status.style.color='var(--red)';
-          status.textContent='❌ Arquivo inválido — não é uma NF-e válida.';return;
-        }
-        // Dados da NF
-        const nNF=xml.querySelector('nNF')?.textContent||'';
-        const dhEmi=xml.querySelector('dhEmi')?.textContent||xml.querySelector('dEmi')?.textContent||'';
-        const xNome=xml.querySelector('emit xNome')?.textContent||'Fornecedor';
-        const vNF=xml.querySelector('vNF')?.textContent||'';
-        if(nNF) document.getElementById('nf-pedido').value=nNF;
-        if(dhEmi){const d=new Date(dhEmi);if(!isNaN(d))document.getElementById('nf-data').value=d.toISOString().split('T')[0];}
-        if(xNome) document.getElementById('nf-fornec').value=xNome.trim();
-        if(vNF) document.getElementById('nf-valor').value=parseFloat(vNF).toFixed(2);
-
-        // Extrai itens da NF
-        const dets=xml.querySelectorAll('det');
-        const itensParsed=[];
-        dets.forEach(det=>{
-          const xProd=det.querySelector('xProd')?.textContent||'';
-          const cProd=det.querySelector('cProd')?.textContent||'';
-          const qCom=parseFloat(det.querySelector('qCom')?.textContent||'1');
-          const vUnCom=parseFloat(det.querySelector('vUnCom')?.textContent||'0');
-          const vProd=parseFloat(det.querySelector('vProd')?.textContent||'0');
-          if(xProd) itensParsed.push({nomeXML:xProd.trim(),codigoNF:cProd.trim(),qtd:Math.round(qCom),custo:vUnCom||(qCom>0?vProd/qCom:0)});
-        });
-
-        status.textContent=`⏳ Processando ${itensParsed.length} itens...`;
-
-        function extrairNomeTam(s){
-          const m=s.trim().toUpperCase().match(/^(.+?)\s+(PP|P|M|G|GG|XG|XGG|XL|XXL|U)$/);
-          return m?{nome:m[1].trim(),tam:m[2]}:{nome:s.trim().toUpperCase(),tam:''};
-        }
-        function norm(s){return s.toUpperCase().replace(/[^A-Z0-9\s]/g,'').replace(/\s+/g,' ').trim();}
-
-        const produtos=window.produtos||[];
-        const idxCodigo={},idxNomeTam={},idxNome={};
-        produtos.forEach(p=>{
-          if(p.codigo) idxCodigo[p.codigo.trim()]=p;
-          idxNomeTam[norm(p.nome)+'|'+(p.tam||'')]=p;
-          const n=norm(p.nome);
-          if(!idxNome[n]) idxNome[n]=[];
-          idxNome[n].push(p);
-        });
-
-        nfItens=[];
-        let encontrados=0,semMatch=0;
-        itensParsed.forEach((item,idx)=>{
-          const {nome:nomeBase,tam:tamXML}=extrairNomeTam(item.nomeXML);
-          const nNorm=norm(nomeBase);
-          let match=item.codigoNF?idxCodigo[item.codigoNF]:null;
-          if(!match&&tamXML) match=idxNomeTam[nNorm+'|'+tamXML];
-          if(!match){
-            const lista=idxNome[nNorm]||[];
-            if(lista.length===1) match=lista[0];
-            else if(lista.length>1) match=lista.find(p=>p.tam===tamXML)||lista[0];
-          }
-          if(match){
-            nfItens.push({pid:match._fid||match.id,_fid:match._fid,nome:match.nome,tam:match.tam,qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:match.nome+' ('+match.tam+')',xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx});
-            encontrados++;
-          } else {
-            nfItens.push({pid:null,_fid:null,nome:nomeBase,tam:tamXML||'',qtd:item.qtd,custo:parseFloat(item.custo.toFixed(2)),nomeCompleto:item.nomeXML,xmlNome:item.nomeXML,codigoNF:item.codigoNF,xmlIdx:idx,semMatch:true});
-            semMatch++;
-          }
-        });
-
-        status.style.background='rgba(29,184,126,.1)';status.style.color='var(--teal)';
-        status.innerHTML=`✅ <strong>${itensParsed.length} itens</strong> — ${encontrados} vinculados${semMatch>0?`, <span style="color:var(--amber)">${semMatch} para revisar</span>`:''}`;
-        renderNfItens();
-        setTimeout(()=>nfStep(2),400);
-
-      } catch(err){
-        console.error('[XML]',err);
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const xml=new DOMParser().parseFromString(e.target.result,'text/xml');
+      if(!xml.querySelector('infNFe')){
         status.style.background='rgba(226,75,74,.1)';status.style.color='var(--red)';
-        status.textContent='❌ Erro: '+err.message;
+        status.textContent='❌ Arquivo inválido';return;
       }
-    };
-    reader.onerror=()=>{status.textContent='❌ Erro ao ler o arquivo';};
-    reader.readAsText(file,'UTF-8');
-  },50);
+      // Preenche dados da NF
+      const nNF=xml.querySelector('nNF')?.textContent||'';
+      const dhEmi=xml.querySelector('dhEmi')?.textContent||xml.querySelector('dEmi')?.textContent||'';
+      const xNome=xml.querySelector('emit xNome')?.textContent||'';
+      const vNF=xml.querySelector('vNF')?.textContent||'';
+      if(nNF) document.getElementById('nf-pedido').value=nNF;
+      if(dhEmi){const d=new Date(dhEmi);if(!isNaN(d))document.getElementById('nf-data').value=d.toISOString().split('T')[0];}
+      if(xNome) document.getElementById('nf-fornec').value=xNome.trim();
+      if(vNF) document.getElementById('nf-valor').value=parseFloat(vNF).toFixed(2);
+      // Extrai itens — sem match automático
+      nfItens=[];
+      xml.querySelectorAll('det').forEach(det=>{
+        const xProd=det.querySelector('xProd')?.textContent||'';
+        const cProd=det.querySelector('cProd')?.textContent||'';
+        const qCom=parseFloat(det.querySelector('qCom')?.textContent||'1');
+        const vUnCom=parseFloat(det.querySelector('vUnCom')?.textContent||'0');
+        const vProd=parseFloat(det.querySelector('vProd')?.textContent||'0');
+        if(!xProd) return;
+        // Extrai tamanho do final do nome
+        const mTam=xProd.trim().toUpperCase().match(/\s+(PP|P|M|G|GG|XG|XGG|U)$/);
+        const tam=mTam?mTam[1]:'';
+        const nome=mTam?xProd.trim().slice(0,-tam.length).trim():xProd.trim();
+        nfItens.push({
+          pid:null,_fid:null,
+          nome:nome.toUpperCase(),tam,
+          qtd:Math.round(qCom),
+          custo:parseFloat((vUnCom||(qCom>0?vProd/qCom:0)).toFixed(2)),
+          nomeCompleto:xProd.trim(),
+          xmlNome:xProd.trim(),codigoNF:cProd.trim(),
+          semMatch:true
+        });
+      });
+      status.style.background='rgba(29,184,126,.1)';status.style.color='var(--teal)';
+      status.innerHTML=`✅ <strong>${nfItens.length} itens</strong> importados — vincule cada item ao produto do estoque abaixo`;
+      renderNfItens();
+      setTimeout(()=>nfStep(2),300);
+    }catch(err){
+      status.style.background='rgba(226,75,74,.1)';status.style.color='var(--red)';
+      status.textContent='❌ Erro: '+err.message;
+    }
+  };
+  reader.readAsText(file,'UTF-8');
 };
 // ====================== IMPORTAÇÃO XML NF-e ======================
 
