@@ -2869,27 +2869,27 @@ function abrirModalProduto(prodId=null){
 
 function editarProduto(id){abrirModalProduto(id)}
 function salvarProduto(){
+  try{
   const nome=document.getElementById('mprod-nome').value.trim();
   if(!nome){toast('Informe o nome',false);return}
-  const codigo=document.getElementById('mprod-codigo').value.trim();
+  const codigo=(document.getElementById('mprod-codigo')||{value:''}).value.trim();
+  const tam=(document.getElementById('mprod-tam')||{value:'-'}).value||'-';
+  const est=parseInt((document.getElementById('mprod-estoque')||{value:'0'}).value)||0;
+  const consig=parseInt((document.getElementById('mprod-consig')||{value:'0'}).value)||0;
   const dados={
     nome,
     grupo:document.getElementById('mprod-grupo').value,
     cls:document.getElementById('mprod-cls').value,
-    tam:'-', // tamanho definido na Entrada NF
-    codigo,
+    tam, codigo,
     custo:R(document.getElementById('mprod-custo').value),
     preco:R(document.getElementById('mprod-preco').value),
-    est:0,
-    consig:0,
-    pedido:''
+    est, consig, pedido:''
   };
   const produtos=window.produtos||[];
   if(editProdId){
     const p=produtos.find(x=>x._fid===editProdId||String(x.id)===String(editProdId));
     if(p){
-      // Preserva tam/est/consig existentes ao editar
-      Object.assign(p,{...dados, tam:p.tam||'-', est:p.est||0, consig:p.consig||0});
+      Object.assign(p,dados);
       if(typeof dbSave==='function'&&p._fid) dbSave('produtos',p,p._fid);
       toast('✅ Produto atualizado: '+dados.nome);
     }
@@ -2898,7 +2898,6 @@ function salvarProduto(){
     window.produtos.push(novP);
     if(typeof dbSave==='function') dbSave('produtos',novP).then(fid=>{
       novP._fid=fid;
-      // Se veio da NF, vincula automaticamente
       if(window._nfPendingIdx!=null){
         const i=window._nfPendingIdx;
         nfItens[i].pid=fid; nfItens[i]._fid=fid;
@@ -2908,15 +2907,20 @@ function salvarProduto(){
         window._nfPendingIdx=null;
         renderNfItens();
         toast('✅ Produto cadastrado e vinculado!');
+      } else {
+        toast('✅ Produto cadastrado: '+novP.nome);
       }
       acInitProdutos();
     });
-    if(!window._nfPendingIdx) toast('✅ Produto cadastrado: '+dados.nome);
   }
   document.getElementById('modal-produto').style.display='none';
   editProdId=null;
   renderProdutos();
   acInitProdutos();
+  }catch(err){
+    console.error('[salvarProduto]',err);
+    toast('Erro ao salvar: '+err.message,false);
+  }
 }
 function excluirProduto(id){
   const produtos=window.produtos||[];
