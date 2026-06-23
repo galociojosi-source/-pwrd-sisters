@@ -1348,6 +1348,21 @@ const dias=s=>{if(!s)return null;const d=new Date(s+'T00:00:00'),h=new Date();h.
 const today=()=>new Date().toISOString().split('T')[0];
 // Gera ID local único: timestamp + random para evitar colisão entre dois dispositivos
 const genLocalId=()=>Date.now()*1000+Math.floor(Math.random()*1000);
+
+// Normaliza nome para comparação: remove acentos, maiúsculas, espaços duplos
+function normNome(s){
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+}
+
+// Busca produto por nome normalizado + tamanho
+function findProduto(nome, tam){
+  const produtos=window.produtos||[];
+  const n=normNome(nome);
+  if(tam&&tam!=='-'){
+    return produtos.find(p=>normNome(p.nome)===n&&p.tam===tam);
+  }
+  return produtos.find(p=>normNome(p.nome)===n);
+}
 let editProdId=null,pdvForma='',pdvCart=[],sessaoVendas=[],nfItens=[],nfStep_cur=1,pdvParcelasDados=[];
 
 // ====================== PEDIDOS PENDENTES ======================
@@ -2474,34 +2489,34 @@ function nfConfirmar(){
   nfItens.filter(x=>x.pid).forEach(x=>{
     const tam=x.tam&&x.tam!=='-'?x.tam:'-';
 
-    // Busca produto COM o mesmo tamanho primeiro
-    let p=produtos.find(q=>(q._fid===x.pid||String(q.id)===String(x.pid))&&q.tam===tam);
+    // Busca produto COM o mesmo tamanho primeiro (normalizado)
+    let p=findProduto(x.nome, tam)||produtos.find(q=>(q._fid===x.pid||q._fid===x._fid||String(q.id)===String(x.pid))&&q.tam===tam);
 
     if(!p){
-      // Não achou com esse tamanho — busca o produto base (pelo pid)
-      const base=produtos.find(q=>q._fid===x.pid||q._fid===x._fid||String(q.id)===String(x.pid));
+      // Busca produto base pelo pid
+      const base=produtos.find(q=>q._fid===x.pid||q._fid===x._fid||String(q.id)===String(x.pid))
+               ||findProduto(x.nome,'');
       if(base){
         if(!base.tam||base.tam==='-'||base.tam===tam){
-          // Produto base sem tamanho definido — usa ele e define o tamanho
-          p=base;
-          p.tam=tam;
+          p=base; p.tam=tam;
         } else {
-          // Produto base tem tamanho diferente — CRIA nova linha para este tamanho
-          const novLinha={
-            id:genLocalId(),
-            nome:base.nome, grupo:base.grupo, cls:base.cls,
-            tam, codigo:base.codigo||'',
-            custo:x.custo, preco:base.preco||0,
-            est:0, consig:0, pedido:pedido
-          };
-          window.produtos.push(novLinha);
-          if(typeof dbSave==='function'){
-            dbSave('produtos',novLinha).then(fid=>{
-              novLinha._fid=fid;
-            });
+          // Cria nova linha — verifica antes se não existe pelo nome normalizado
+          const jaExiste=findProduto(base.nome, tam);
+          if(jaExiste){ p=jaExiste; }
+          else {
+            const novLinha={
+              id:genLocalId(),
+              nome:base.nome, grupo:base.grupo, cls:base.cls,
+              tam, codigo:base.codigo||'',
+              custo:x.custo, preco:base.preco||0,
+              est:0, consig:0, pedido:pedido
+            };
+            window.produtos.push(novLinha);
+            if(typeof dbSave==='function'){
+              dbSave('produtos',novLinha).then(fid=>{novLinha._fid=fid;});
+            }
+            p=novLinha;
           }
-          p=novLinha;
-        }
       }
     }
 
@@ -3944,8 +3959,8 @@ function registrarAjuste(){
   // busca ou cria linha específica para esse tamanho
   let prodAlvo=p;
   if(tipo==='entrada' && tamSel && tamSel!=='-' && tamSel!==p.tam){
-    // Procura linha com mesmo nome e tamanho selecionado
-    const linhaExistente=produtos.find(x=>x.nome===p.nome&&x.tam===tamSel);
+    // Procura linha com mesmo nome normalizado e tamanho selecionado
+    const linhaExistente=findProduto(p.nome, tamSel);
     if(linhaExistente){
       prodAlvo=linhaExistente;
     } else {
