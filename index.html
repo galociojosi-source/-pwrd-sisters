@@ -115,6 +115,13 @@ function startSync(){
     call("updateBadges");
     if(document.getElementById("v-pedidos")?.classList.contains("on")) call("renderPedidos");
   }, err=>console.error("[pedidos]",err));
+
+  // HISTÓRICO NF
+  onSnapshot(collection(db,"nfEntradas"), snap=>{
+    window.nfEntradas = snap.docs.map(d=>({...d.data(), _fid:d.id, id:d.data().localId||d.id}));
+    window.nfEntradas.sort((a,b)=>new Date(b.data)-new Date(a.data));
+    if(document.getElementById("v-nf")?.classList.contains("on")) call("renderNfHistorico");
+  }, err=>console.error("[nfEntradas]",err));
 }
 
 // ── Sincroniza catálogo local → Firestore ──────────────────────────────────
@@ -767,6 +774,17 @@ td.mono{font-family:'DM Mono',monospace;font-size:11px}
       </div>
     </div>
   </div>
+
+  <!-- HISTÓRICO DE ENTRADAS NF -->
+  <div class="card" style="margin-top:14px">
+    <div class="card-hd">
+      <span class="card-title"><i class="ti ti-history" style="color:var(--blue)"></i> Histórico de Entradas NF</span>
+    </div>
+    <div class="fbar" style="margin-bottom:10px">
+      <input type="text" placeholder="Buscar Nº Pedido ou fornecedor..." id="nf-hist-q" oninput="renderNfHistorico()" style="flex:1">
+    </div>
+    <div id="nf-historico-list"><div class="empty"><i class="ti ti-inbox"></i>Nenhuma entrada registrada</div></div>
+  </div>
 </div>
 
 <!-- ESTOQUE -->
@@ -775,6 +793,7 @@ td.mono{font-family:'DM Mono',monospace;font-size:11px}
   <div class="chips" id="chips-est"></div>
   <div class="fbar">
     <input type="text" placeholder="Buscar produto..." id="est-q" oninput="renderEstoque()">
+    <input type="text" placeholder="Nº Pedido PWRD..." id="est-pedido" oninput="renderEstoque()" style="max-width:160px;font-family:'DM Mono',monospace">
     <select id="est-tam" onchange="renderEstoque()"><option value="">Todos tamanhos</option><option>P</option><option>M</option><option>G</option><option>GG</option><option>PP</option><option>U</option><option>PCT</option></select>
     <select id="est-cls" onchange="renderEstoque()"><option value="">Toda classificação</option><option>FEM</option><option>MASC</option><option>INFANTIL</option><option>ACESSORIO</option><option>CAFÉ</option></select>
     <select id="est-sit" onchange="renderEstoque()">
@@ -2253,6 +2272,8 @@ function initNf(){
   document.getElementById('nf-data').value=today();
   nfItens=[];
   acInitProdutos();
+  renderNfItens();
+  renderNfHistorico();
 }
 function nfAutoFill(){
   const pid=document.getElementById('nf-prod').value;
@@ -2405,59 +2426,156 @@ window.nfCadastrarNovo=nfCadastrarNovo;
 
 function nfConfirmar(){
   if(!nfItens.length){toast('Adicione itens',false);return}
-  // Verifica se ainda há itens sem vínculo
   const semVinculo=nfItens.filter(x=>!x.pid);
   if(semVinculo.length){
-    if(!confirm(`${semVinculo.length} item(ns) ainda sem produto vinculado. Deseja confirmar mesmo assim? Esses itens serão ignorados.`)) return;
+    if(!confirm(`${semVinculo.length} item(ns) sem produto vinculado. Confirmar mesmo assim? Esses itens serão ignorados.`)) return;
   }
   const produtos=window.produtos||[];
+  const pedido=document.getElementById('nf-pedido').value||'';
+  const data=document.getElementById('nf-data').value||today();
+  const fornec=document.getElementById('nf-fornec').value||'';
+  const valorNF=R(document.getElementById('nf-valor').value)||0;
   let confirmados=0;
+  const itensConfirmados=[];
+
   nfItens.filter(x=>x.pid).forEach(x=>{
     const p=produtos.find(q=>q._fid===x._fid||q._fid===x.pid||String(q.id)===String(x.pid));
     if(p){
-      // Atualiza estoque
       p.est=(p.est||0)+x.qtd;
-      // Atualiza custo
       p.custo=x.custo;
-      // Atualiza tamanho se estava vazio ou genérico
-      if(x.tam && x.tam!=='-' && (!p.tam||p.tam==='-')){
-        p.tam=x.tam;
-      }
+      if(x.tam&&x.tam!=='-'&&(!p.tam||p.tam==='-')) p.tam=x.tam;
       if(typeof dbSave==='function'){
         if(p._fid) dbSave('produtos',p,p._fid);
         else if(typeof dbSet==='function') dbSet('produtos',p.id,p);
       }
+      itensConfirmados.push({
+        pid:p._fid||p.id, nome:p.nome, tam:x.tam||p.tam,
+        qtd:x.qtd, custo:x.custo, codigoNF:x.codigoNF||''
+      });
       confirmados++;
     }
   });
-  toast(`✅ ${confirmados} itens adicionados ao estoque!`);
+
+  // Salva histórico da NF
+  const entrada={
+    id:genLocalId(),
+    pedido, data, fornec, valorNF,
+    itens:itensConfirmados,
+    total:itensConfirmados.reduce((a,x)=>a+x.qtd*x.custo,0),
+    op:document.getElementById('global-op')?.value||'',
+    cancelada:false
+  };
+  if(!window.nfEntradas) window.nfEntradas=[];
+  window.nfEntradas.unshift(entrada);
+  if(typeof dbSave==='function'){
+    const{id,...d}=entrada;
+    dbSave('nfEntradas',{...d,localId:id}).then(fid=>entrada._fid=fid);
+  }
+
+  toast(`✅ ${confirmados} itens adicionados ao estoque! Pedido #${pedido}`);
   nfItens=[];
   nfStep(1);
   document.getElementById('nf-pedido').value='';
+  document.getElementById('nf-data').value='';
+  document.getElementById('nf-fornec').value='PWRD BY COFFEE';
+  document.getElementById('nf-valor').value='';
   document.getElementById('nf-itens-list').innerHTML='';
   renderEstoque();
+  renderNfHistorico();
 }
+
+// ====================== HISTÓRICO NF ======================
+window.nfEntradas=[];
+
+function renderNfHistorico(){
+  const entradas=window.nfEntradas||[];
+  const q=(document.getElementById('nf-hist-q')||{value:''}).value.toLowerCase();
+  const el=document.getElementById('nf-historico-list');
+  if(!el) return;
+  const list=entradas.filter(e=>!q||(e.pedido||'').toLowerCase().includes(q)||(e.fornec||'').toLowerCase().includes(q));
+  if(!list.length){el.innerHTML='<div class="empty"><i class="ti ti-inbox"></i>Nenhuma entrada registrada</div>';return;}
+  el.innerHTML=list.map(e=>{
+    const eid=e._fid||e.id;
+    return `<div class="card" style="margin-bottom:8px;padding:10px 14px;${e.cancelada?'opacity:.5;border-left:3px solid var(--red)':'border-left:3px solid var(--teal)'}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:700;font-size:14px">
+            ${e.cancelada?'<span style="color:var(--red);font-size:11px;margin-right:6px">❌ ESTORNADA</span>':''}
+            Pedido #${e.pedido||'—'}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">${fD(e.data)} · ${e.fornec||'—'} · ${e.itens?.length||0} itens · Total custo: ${fR(e.total||0)}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+            ${(e.itens||[]).map(i=>`<span style="background:var(--bg3);padding:2px 8px;border-radius:20px;font-size:11px">${i.nome}${i.tam&&i.tam!=='-'?' ('+i.tam+')':''} ×${i.qtd}</span>`).join('')}
+          </div>
+        </div>
+        <div style="flex-shrink:0">
+          ${!e.cancelada?`<button class="btn sm ghost" style="color:var(--red)" onclick="estornarNF('${eid}')"><i class="ti ti-arrow-back-up"></i>Estornar</button>`:'<span style="font-size:11px;color:var(--red)">Estornada</span>'}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function estornarNF(id){
+  const entradas=window.nfEntradas||[];
+  const e=entradas.find(x=>x._fid===id||String(x.id)===String(id)||x.localId===id);
+  if(!e){toast('Entrada não encontrada',false);return;}
+  if(e.cancelada){toast('Esta entrada já foi estornada',false);return;}
+  if(!confirm(`Estornar entrada Pedido #${e.pedido||'—'}?\n\nIsso vai REMOVER ${e.itens?.length||0} itens do estoque.\nEsta ação não pode ser desfeita.`)) return;
+
+  const produtos=window.produtos||[];
+  let estornados=0;
+  (e.itens||[]).forEach(item=>{
+    const p=produtos.find(x=>x._fid===item.pid||String(x.id)===String(item.pid));
+    if(p){
+      p.est=Math.max(0,(p.est||0)-item.qtd);
+      if(typeof dbSave==='function'&&p._fid) dbSave('produtos',p,p._fid);
+      estornados++;
+    }
+  });
+
+  e.cancelada=true;
+  if(typeof dbSave==='function'&&e._fid) dbSave('nfEntradas',e,e._fid);
+
+  renderNfHistorico();
+  renderEstoque();
+  toast(`✅ Entrada estornada — ${estornados} itens removidos do estoque`);
+}
+window.estornarNF=estornarNF;
+window.renderNfHistorico=renderNfHistorico;
+// ====================== HISTÓRICO NF ======================
 
 // ====================== ESTOQUE ======================
 let estCatFil='';
 function renderEstoque(){
   const produtos=window.produtos||[];
   const q=(document.getElementById('est-q')||{value:''}).value.toLowerCase();
+  const pedidoFil=(document.getElementById('est-pedido')||{value:''}).value.trim();
   const tam=(document.getElementById('est-tam')||{value:''}).value;
   const cls=(document.getElementById('est-cls')||{value:''}).value;
   const sit=(document.getElementById('est-sit')||{value:''}).value;
+
+  // Se filtrar por pedido, busca quais produtos entraram naquele pedido
+  let pidsDoPedido=null;
+  if(pedidoFil){
+    const entradas=window.nfEntradas||[];
+    const entrada=entradas.find(e=>e.pedido&&e.pedido.toString()===pedidoFil&&!e.cancelada);
+    if(entrada) pidsDoPedido=new Set((entrada.itens||[]).map(i=>String(i.pid)));
+    else pidsDoPedido=new Set(); // pedido não encontrado = nenhum resultado
+  }
   const grupos=[...new Set(produtos.map(p=>p.grupo))].sort();
   document.getElementById('chips-est').innerHTML=`<button class="chip" style="${!estCatFil?'font-weight:700;color:var(--pink)':''}" onclick="estCatFil='';renderEstoque()">Todos</button>`+grupos.map(g=>`<button class="chip" style="${estCatFil===g?'font-weight:700;color:var(--pink)':''}" onclick="estCatFil='${g.replace(/'/g,'')}'.replace(/\\\\'/g,\"'\");estCatFil='${g}';renderEstoque()">${g}</button>`).join('');
   let list=produtos.filter(p=>{
-    const passQ  = !q   || p.nome.toLowerCase().includes(q) || p.grupo.toLowerCase().includes(q);
+    const passQ  = !q   || p.nome.toLowerCase().includes(q) || (p.grupo||'').toLowerCase().includes(q);
     const passTam= !tam || p.tam===tam;
     const passCls= !cls || p.cls===cls;
     const passCat= !estCatFil || p.grupo===estCatFil;
+    const passPed= !pidsDoPedido || pidsDoPedido.has(p._fid||String(p.id));
     const passSit= !sit
       || (sit==='disp'   && p.est>0)
       || (sit==='consig' && p.consig>0 && p.est===0)
       || (sit==='zero'   && p.est===0 && p.consig===0);
-    return passQ && passTam && passCls && passCat && passSit;
+    return passQ && passTam && passCls && passCat && passPed && passSit;
   });
   const tot=produtos.reduce((a,p)=>a+p.est,0);
   const consig=produtos.reduce((a,p)=>a+p.consig,0);
