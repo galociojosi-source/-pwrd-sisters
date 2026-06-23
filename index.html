@@ -1199,12 +1199,32 @@ td.mono{font-family:'DM Mono',monospace;font-size:11px}
       <div class="fg"><label>Grupo/Categoria</label><select id="mprod-grupo"></select></div>
       <div class="fg"><label>Classificação</label><select id="mprod-cls"><option>FEM</option><option>MASC</option><option>INFANTIL</option><option>ACESSORIO</option><option>CAFÉ</option></select></div>
     </div>
+    <!-- Tamanho e Estoque — visíveis apenas no modo edição -->
+    <div id="mprod-edit-fields" style="display:none">
+      <div class="form-row col3">
+        <div class="fg">
+          <label>Tamanho</label>
+          <select id="mprod-tam" style="width:100%;padding:8px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:13px">
+            <option value="-">—</option>
+            <option value="P">P</option>
+            <option value="M">M</option>
+            <option value="G">G</option>
+            <option value="GG">GG</option>
+            <option value="XG">XG</option>
+            <option value="XGG">XGG</option>
+            <option value="U">U</option>
+          </select>
+        </div>
+        <div class="fg"><label>Estoque atual</label><input type="number" id="mprod-estoque" value="0" min="0" style="text-align:center;font-weight:600"></div>
+        <div class="fg"><label>Consignados</label><input type="number" id="mprod-consig" value="0" min="0" style="text-align:center"></div>
+      </div>
+    </div>
     <div class="form-row col3">
       <div class="fg"><label>Código NF <span style="color:var(--text3);font-size:10px">(cProd da NF-e)</span></label><input type="text" id="mprod-codigo" placeholder="ex: 001234" style="font-family:'DM Mono',monospace"></div>
       <div class="fg"><label>Custo unit. (R$)</label><input type="number" id="mprod-custo" step="0.01"></div>
       <div class="fg"><label>Preço venda (R$)</label><input type="number" id="mprod-preco" step="0.01"></div>
     </div>
-    <div style="font-size:11px;color:var(--text3);padding:8px 12px;background:var(--bg3);border-radius:var(--radius);margin-bottom:12px">
+    <div id="mprod-novo-hint" style="font-size:11px;color:var(--text3);padding:8px 12px;background:var(--bg3);border-radius:var(--radius);margin-bottom:12px">
       <i class="ti ti-info-circle" style="color:var(--blue)"></i> O tamanho e estoque são informados na <strong>Entrada NF</strong>, não no cadastro.
     </div>
     <div style="text-align:right;margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
@@ -2366,21 +2386,37 @@ window.nfCadastrarNovo=nfCadastrarNovo;
 
 function nfConfirmar(){
   if(!nfItens.length){toast('Adicione itens',false);return}
+  // Verifica se ainda há itens sem vínculo
+  const semVinculo=nfItens.filter(x=>!x.pid);
+  if(semVinculo.length){
+    if(!confirm(`${semVinculo.length} item(ns) ainda sem produto vinculado. Deseja confirmar mesmo assim? Esses itens serão ignorados.`)) return;
+  }
   const produtos=window.produtos||[];
-  nfItens.forEach(x=>{
-    const p=produtos.find(q=>String(q.id)===String(x.pid)||q._fid===x._fid);
+  let confirmados=0;
+  nfItens.filter(x=>x.pid).forEach(x=>{
+    const p=produtos.find(q=>q._fid===x._fid||q._fid===x.pid||String(q.id)===String(x.pid));
     if(p){
-      p.est+=x.qtd;p.custo=x.custo;
+      // Atualiza estoque
+      p.est=(p.est||0)+x.qtd;
+      // Atualiza custo
+      p.custo=x.custo;
+      // Atualiza tamanho se estava vazio ou genérico
+      if(x.tam && x.tam!=='-' && (!p.tam||p.tam==='-')){
+        p.tam=x.tam;
+      }
       if(typeof dbSave==='function'){
         if(p._fid) dbSave('produtos',p,p._fid);
         else if(typeof dbSet==='function') dbSet('produtos',p.id,p);
       }
+      confirmados++;
     }
   });
-  toast(`✅ ${nfItens.length} itens adicionados ao estoque!`);
-  nfItens=[];nfStep(1);
+  toast(`✅ ${confirmados} itens adicionados ao estoque!`);
+  nfItens=[];
+  nfStep(1);
   document.getElementById('nf-pedido').value='';
   document.getElementById('nf-itens-list').innerHTML='';
+  renderEstoque();
 }
 
 // ====================== ESTOQUE ======================
@@ -2886,14 +2922,23 @@ function abrirModalProduto(prodId=null){
     document.getElementById('mprod-custo').value=p.custo||'';
     document.getElementById('mprod-preco').value=p.preco||'';
     document.getElementById('mprod-title').textContent='✏️ Editar: '+p.nome;
+    // Modo edição — mostra tamanho e estoque
+    document.getElementById('mprod-edit-fields').style.display='block';
+    document.getElementById('mprod-novo-hint').style.display='none';
+    document.getElementById('mprod-tam').value=p.tam||'-';
+    document.getElementById('mprod-estoque').value=Number.isFinite(p.est)?p.est:0;
+    document.getElementById('mprod-consig').value=Number.isFinite(p.consig)?p.consig:0;
   } else {
-    ['mprod-nome','mprod-codigo','mprod-custo','mprod-preco'].forEach(fid=>{
-      const el=document.getElementById(fid);
-      if(el) el.value='';
-    });
+    document.getElementById('mprod-nome').value='';
+    document.getElementById('mprod-codigo').value='';
+    document.getElementById('mprod-custo').value='';
+    document.getElementById('mprod-preco').value='';
     document.getElementById('mprod-cls').value='FEM';
     gsel.value=grupos[0]||'';
     document.getElementById('mprod-title').textContent='Novo produto';
+    // Modo novo — esconde tamanho e estoque
+    document.getElementById('mprod-edit-fields').style.display='none';
+    document.getElementById('mprod-novo-hint').style.display='block';
   }
   document.getElementById('modal-produto').style.display='flex';
 }
