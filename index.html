@@ -1111,6 +1111,25 @@ td.mono{font-family:'DM Mono',monospace;font-size:11px}
             </select>
           </div>
         </div>
+        <div class="form-row col2" style="margin-bottom:10px">
+          <div class="fg">
+            <label>Tamanho</label>
+            <select id="ajuste-tam" style="width:100%;padding:8px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:13px">
+              <option value="">— automático —</option>
+              <option value="P">P</option>
+              <option value="M">M</option>
+              <option value="G">G</option>
+              <option value="GG">GG</option>
+              <option value="XG">XG</option>
+              <option value="U">U</option>
+              <option value="-">—</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Preço de venda (R$)</label>
+            <input type="number" id="ajuste-preco" step="0.01" placeholder="Auto">
+          </div>
+        </div>
         <div class="fg" style="margin-bottom:14px">
           <label>Observação / Descrição *</label>
           <input type="text" id="ajuste-obs" placeholder="Descreva o motivo detalhado...">
@@ -3603,8 +3622,8 @@ function initAjustes(){
   acRegister('ajuste-prod', (window.produtos||[])
     .sort((a,b)=>a.nome.localeCompare(b.nome))
     .map(p=>({
-      value: String(p.id),
-      label: p.nome + ' (' + p.tam + ')',
+      value: p._fid||String(p.id),
+      label: p.nome + (p.tam&&p.tam!=='-'?' ('+p.tam+')':''),
       sub: p.grupo + ' · ' + fR(p.preco) + ' · Est: ' + p.est
     })), (id)=>{ ajusteProdutoSelecionado(id); });
   renderAjustes();
@@ -3613,9 +3632,16 @@ function initAjustes(){
 
 function ajusteProdutoSelecionado(id){
   document.getElementById('ajuste-prod').value = id;
-  const p = produtos.find(x=>String(x.id)==String(id)||x._fid==id);
+  const p = (window.produtos||[]).find(x=>x._fid===id||String(x.id)===String(id));
   if(p){
-    document.getElementById('ajuste-custo').value = p.custo || '';
+    document.getElementById('ajuste-custo').value = p.custo||'';
+    document.getElementById('ajuste-preco').value = p.preco||'';
+    // Preenche tamanho se o produto já tem
+    if(p.tam && p.tam!=='-'){
+      document.getElementById('ajuste-tam').value = p.tam;
+    } else {
+      document.getElementById('ajuste-tam').value = '';
+    }
     atualizarPreviewAjuste();
   }
 }
@@ -3628,18 +3654,20 @@ function selecionaMotivo(motivo, el){
 }
 
 function atualizarPreviewAjuste(){
+  const produtos=window.produtos||[];
   const pid = document.getElementById('ajuste-prod').value;
   const p = produtos.find(x=>x._fid===pid||String(x.id)===String(pid));
   if(!p || !ajusteMotivoSel) { document.getElementById('ajuste-preview').style.display='none'; return; }
   const qtd = parseInt(document.getElementById('ajuste-qtd').value)||1;
   const custo = R(document.getElementById('ajuste-custo').value)||p.custo;
   const tipo = document.getElementById('ajuste-tipo').value;
+  const tam = document.getElementById('ajuste-tam').value||p.tam||'-';
   const m = motivoLabels[ajusteMotivoSel];
   const custoTotal = custo * qtd;
   const novoEst = tipo==='saida' ? Math.max(0, p.est - qtd) : p.est + qtd;
   document.getElementById('ajuste-preview').style.display = 'block';
   document.getElementById('ajuste-preview-content').innerHTML = `
-    <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Produto</span><span style="font-weight:600">${p.nome} (${p.tam})</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Produto</span><span style="font-weight:600">${p.nome} (${tam})</span></div>
     <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Motivo</span><span style="color:${m.color};font-weight:600">${m.label}</span></div>
     <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Movimento</span><span style="color:${tipo==='saida'?'var(--red)':'var(--teal)'}">${tipo==='saida'?'− '+qtd+' un (baixa)':'+ '+qtd+' un (acréscimo)'}</span></div>
     <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Custo baixado</span><span style="font-family:'DM Mono',monospace">${tipo==='saida'?fR(custoTotal):'—'}</span></div>
@@ -3657,6 +3685,8 @@ function registrarAjuste(){
   if(!p){ toast('Produto não encontrado', false); return; }
   const qtd = Math.max(1, parseInt(document.getElementById('ajuste-qtd').value)||1);
   const custo = R(document.getElementById('ajuste-custo').value)||p.custo;
+  const preco = R(document.getElementById('ajuste-preco').value)||p.preco;
+  const tam = document.getElementById('ajuste-tam').value||p.tam||'-';
   const tipo = document.getElementById('ajuste-tipo').value;
   const op = document.getElementById('ajuste-op').value;
   const data = document.getElementById('ajuste-data').value || today();
@@ -3664,6 +3694,10 @@ function registrarAjuste(){
   if(tipo==='saida' && p.est < qtd){
     if(!confirm(`Estoque atual é ${p.est} un. Deseja baixar ${qtd} mesmo assim?`)) return;
   }
+
+  // Atualiza tamanho e preço se informados
+  if(tam && tam!=='-' && (!p.tam||p.tam==='-')) p.tam=tam;
+  if(preco>0 && p.preco===0) p.preco=preco;
 
   // Atualiza estoque do produto
   const estoqueAntes = p.est;
@@ -3682,14 +3716,13 @@ function registrarAjuste(){
   const ajuste = {
     id: genLocalId(),
     data, op,
-    pid: p.id,
-    prod: p.nome + ' (' + p.tam + ')',
+    pid: p._fid||p.id,
+    prod: p.nome + (tam&&tam!=='-'?' ('+tam+')':''),
     grupo: p.grupo,
     motivo: ajusteMotivoSel,
     motivoLabel: m.label,
-    tipo,
-    qtd,
-    custo,
+    tipo, qtd, custo, preco,
+    tam,
     custoTotal: tipo==='saida' ? custo * qtd : 0,
     estoqueAntes,
     estoqueDepois: p.est,
@@ -3706,6 +3739,8 @@ function registrarAjuste(){
   document.getElementById('ajuste-prod').value = '';
   document.getElementById('ajuste-qtd').value = 1;
   document.getElementById('ajuste-custo').value = '';
+  document.getElementById('ajuste-preco').value = '';
+  document.getElementById('ajuste-tam').value = '';
   document.getElementById('ajuste-obs').value = '';
   document.getElementById('ajuste-preview').style.display = 'none';
   document.querySelectorAll('.motivo-opt').forEach(b=>b.classList.remove('sel'));
