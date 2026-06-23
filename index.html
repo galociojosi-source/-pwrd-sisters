@@ -2435,22 +2435,57 @@ function nfConfirmar(){
   const data=document.getElementById('nf-data').value||today();
   const fornec=document.getElementById('nf-fornec').value||'';
   const valorNF=R(document.getElementById('nf-valor').value)||0;
+  const op=document.getElementById('global-op')?.value||'';
   let confirmados=0;
   const itensConfirmados=[];
 
   nfItens.filter(x=>x.pid).forEach(x=>{
-    const p=produtos.find(q=>q._fid===x._fid||q._fid===x.pid||String(q.id)===String(x.pid));
+    const tam=x.tam&&x.tam!=='-'?x.tam:'-';
+
+    // Busca produto COM o mesmo tamanho primeiro
+    let p=produtos.find(q=>(q._fid===x.pid||String(q.id)===String(x.pid))&&q.tam===tam);
+
+    if(!p){
+      // Não achou com esse tamanho — busca o produto base (pelo pid)
+      const base=produtos.find(q=>q._fid===x.pid||q._fid===x._fid||String(q.id)===String(x.pid));
+      if(base){
+        if(!base.tam||base.tam==='-'||base.tam===tam){
+          // Produto base sem tamanho definido — usa ele e define o tamanho
+          p=base;
+          p.tam=tam;
+        } else {
+          // Produto base tem tamanho diferente — CRIA nova linha para este tamanho
+          const novLinha={
+            id:genLocalId(),
+            nome:base.nome, grupo:base.grupo, cls:base.cls,
+            tam, codigo:base.codigo||'',
+            custo:x.custo, preco:base.preco||0,
+            est:0, consig:0, pedido:pedido
+          };
+          window.produtos.push(novLinha);
+          if(typeof dbSave==='function'){
+            dbSave('produtos',novLinha).then(fid=>{
+              novLinha._fid=fid;
+            });
+          }
+          p=novLinha;
+        }
+      }
+    }
+
     if(p){
       p.est=(p.est||0)+x.qtd;
       p.custo=x.custo;
-      if(x.tam&&x.tam!=='-'&&(!p.tam||p.tam==='-')) p.tam=x.tam;
+      p.pedido=pedido; // guarda referência ao pedido
       if(typeof dbSave==='function'){
         if(p._fid) dbSave('produtos',p,p._fid);
         else if(typeof dbSet==='function') dbSet('produtos',p.id,p);
       }
       itensConfirmados.push({
-        pid:p._fid||p.id, nome:p.nome, tam:x.tam||p.tam,
-        qtd:x.qtd, custo:x.custo, codigoNF:x.codigoNF||''
+        pid:p._fid||p.id,
+        nome:p.nome, tam:p.tam,
+        qtd:x.qtd, custo:x.custo,
+        codigoNF:x.codigoNF||''
       });
       confirmados++;
     }
@@ -2462,8 +2497,7 @@ function nfConfirmar(){
     pedido, data, fornec, valorNF,
     itens:itensConfirmados,
     total:itensConfirmados.reduce((a,x)=>a+x.qtd*x.custo,0),
-    op:document.getElementById('global-op')?.value||'',
-    cancelada:false
+    op, cancelada:false
   };
   if(!window.nfEntradas) window.nfEntradas=[];
   window.nfEntradas.unshift(entrada);
@@ -2472,7 +2506,7 @@ function nfConfirmar(){
     dbSave('nfEntradas',{...d,localId:id}).then(fid=>entrada._fid=fid);
   }
 
-  toast(`✅ ${confirmados} itens adicionados ao estoque! Pedido #${pedido}`);
+  toast(`✅ ${confirmados} itens confirmados no estoque! Pedido #${pedido}`);
   nfItens=[];
   nfStep(1);
   document.getElementById('nf-pedido').value='';
@@ -2480,8 +2514,7 @@ function nfConfirmar(){
   document.getElementById('nf-fornec').value='PWRD BY COFFEE';
   document.getElementById('nf-valor').value='';
   document.getElementById('nf-itens-list').innerHTML='';
-  renderEstoque();
-  renderNfHistorico();
+  setTimeout(()=>{renderEstoque();renderNfHistorico();},300);
 }
 
 // ====================== HISTÓRICO NF ======================
