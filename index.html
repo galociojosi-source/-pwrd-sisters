@@ -1148,15 +1148,15 @@ td.mono{font-family:'DM Mono',monospace;font-size:11px}
         <div class="form-row col3">
           <div class="fg">
             <label>Quantidade</label>
-            <input type="number" id="ajuste-qtd" value="1" min="1">
+            <input type="number" id="ajuste-qtd" value="1" min="1" oninput="atualizarPreviewAjuste()">
           </div>
           <div class="fg">
             <label>Custo unit. (R$)</label>
-            <input type="number" id="ajuste-custo" step="0.01" placeholder="Auto">
+            <input type="number" id="ajuste-custo" step="0.01" placeholder="Auto" oninput="atualizarPreviewAjuste()">
           </div>
           <div class="fg">
             <label>Tipo</label>
-            <select id="ajuste-tipo">
+            <select id="ajuste-tipo" onchange="atualizarPreviewAjuste()">
               <option value="saida">− Saída (baixa)</option>
               <option value="entrada">+ Entrada (acréscimo)</option>
             </select>
@@ -1165,7 +1165,7 @@ td.mono{font-family:'DM Mono',monospace;font-size:11px}
         <div class="form-row col2" style="margin-bottom:10px">
           <div class="fg">
             <label>Tamanho</label>
-            <select id="ajuste-tam" style="width:100%;padding:8px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:13px">
+            <select id="ajuste-tam" onchange="atualizarPreviewAjuste()" style="width:100%;padding:8px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:13px">
               <option value="">— automático —</option>
               <option value="P">P</option>
               <option value="M">M</option>
