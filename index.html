@@ -2781,6 +2781,7 @@ function renderVendas(){
       <td>${stBadge(v)}</td>
       <td style="white-space:nowrap">
         <button class="btn sm ghost" onclick="abrirEditVenda('${v._fid||v.id}')" title="Editar venda"><i class="ti ti-pencil"></i></button>
+        <button class="btn sm ghost" onclick="reimprimirVenda('${v._fid||v.id}')" title="Reimprimir / WhatsApp" style="color:var(--teal)"><i class="ti ti-send"></i></button>
         <button class="btn sm ghost" onclick="excluirVenda('${v._fid||v.id}')" title="Excluir venda" style="color:var(--red)"><i class="ti ti-trash"></i></button>
       </td>
     </tr>`).join('')}</tbody>`;
@@ -2842,7 +2843,47 @@ function _devolverEstoque(v){
   }
 }
 
-function _removerParcelas(v){
+// Reimprimir comprovante de venda
+function reimprimirVenda(id){
+  const todasVendas=window.vendas||[];
+  // Busca todas as vendas do mesmo cliente/data (agrupando os itens)
+  const v=_findVenda(id);
+  if(!v) return;
+  // Pega todos os itens de produto (não parcelas) do mesmo cliente na mesma data
+  const itensCli=todasVendas.filter(x=>!x.isParcela&&x.cli===v.cli&&x.data===v.data);
+  const parcelas=todasVendas.filter(x=>x.isParcela&&x.cli===v.cli&&x.data===v.data);
+  const itensParaRecibo=itensCli.length>0?itensCli:[v];
+  mostrarRecibo(v.cli, itensParaRecibo, v.op, parcelas.length>0?parcelas.map(p=>({n:p.prod.match(/Parcela (\d+)/)?.[1]||1, data:p.venc, valor:p.val})):null, 0);
+}
+window.reimprimirVenda=reimprimirVenda;
+
+// Reimprimir cobrança de pagamento (WhatsApp com valor pendente)
+function reimprimirCobranca(id){
+  const todasVendas=window.vendas||[];
+  const v=todasVendas.find(x=>x._fid===id||String(x.id)===String(id)||x.localId===id);
+  if(!v) return;
+  const cliObj=(window.clientes||[]).find(c=>c.nome===v.cli);
+  const tel=(cliObj?.tel||'').replace(/\D/g,'');
+  const valor=R(v.val)*(v.qtd||1);
+  const vencTxt=v.venc?`\nVencimento: *${fD(v.venc)}*`:'';
+  const statusTxt=v.st==='pago'?'✅ *PAGO*':'⏳ *PENDENTE*';
+  const msg=
+    `*PWRD SISTERS* ☕\n`+
+    `━━━━━━━━━━━━━━━━━\n`+
+    `Olá, *${v.cli}*!\n\n`+
+    `${statusTxt}\n`+
+    `${v.prod}\n`+
+    `Valor: *${fR(valor)}*`+
+    `${vencTxt}\n\n`+
+    (v.st==='pendente'?`📲 *PIX para pagamento:*\n16997148414\nEnviar comprovante para confirmação\n\n`:'')+
+    `Operadora: ${v.op||''}\n`+
+    `Data venda: ${fD(v.data)}`;
+  const url=tel
+    ?`https://wa.me/55${tel}?text=${encodeURIComponent(msg)}`
+    :`https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(url,'_blank');
+}
+window.reimprimirCobranca=reimprimirCobranca;
   // Remove parcelas associadas (mesmo cli + data + forma parcelada)
   if(!['PIX Parcelado','Cartão Crédito'].includes(v.forma)) return;
   const parcelas=(window.vendas||[]).filter(x=>x.isParcela&&x.cli===v.cli&&x.data===v.data);
@@ -2958,7 +2999,16 @@ function renderPagamentos(){
         <td>${v.forma}</td>
         <td class="mono" style="${vencAtrasado?'color:var(--red)':''}">${fD(v.venc)}</td>
         <td>${stBadge(v)}</td>
-        <td>${v.st==='pendente'?`<button class="btn sm success" onclick="marcarPago('${vid}')"><i class="ti ti-check"></i>Pago</button>`:'<span class="badge pg">✓</span>'}</td>
+        <td>${v.st==='pendente'
+          ?`<div style="display:flex;gap:4px">
+              <button class="btn sm success" onclick="marcarPago('${vid}')"><i class="ti ti-check"></i>Pago</button>
+              <button class="btn sm ghost" onclick="reimprimirCobranca('${vid}')" title="Enviar cobrança WhatsApp" style="color:var(--teal)"><i class="ti ti-brand-whatsapp"></i></button>
+            </div>`
+          :`<div style="display:flex;gap:4px;align-items:center">
+              <span class="badge pg">✓</span>
+              <button class="btn sm ghost" onclick="reimprimirCobranca('${vid}')" title="Enviar comprovante" style="color:var(--teal)"><i class="ti ti-brand-whatsapp"></i></button>
+            </div>`}
+        </td>
       </tr>`;
     }).join('')}</tbody>`;
 }
