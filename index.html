@@ -10,11 +10,10 @@
 <title>PWRD Sisters — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
-<!-- Firebase SDK -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
+<!-- Firebase SDK (compat — funciona no GitHub Pages) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
 const firebaseConfig = {
   apiKey: "AIzaSyBr_jd2HAwdXiE4GXL9z8dsYBJwsiIbxOY",
   authDomain: "pwrd-system.firebaseapp.com",
@@ -24,15 +23,14 @@ const firebaseConfig = {
   appId: "1:562065064688:web:112664969056af42a4f835"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 window._db = db;
-window._fs = { collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, getDocs, serverTimestamp };
 
 // ── Sync listeners ──────────────────────────────────────────────────────
 function startSync(){
   // PRODUTOS
-  onSnapshot(collection(db,'produtos'), snap=>{
+  db.collection('produtos').onSnapshot(snap=>{
     if(snap.metadata.hasPendingWrites) return;
     const data = snap.docs.map(d=>({...d.data(), _fid:d.id}));
     if(data.length){
@@ -41,21 +39,24 @@ function startSync(){
       const v = document.getElementById('v-estoque');
       if(v&&v.classList.contains('on')) renderEstoque();
     }
+    setSyncStatus(true,'Sincronizado');
+  }, err=>{
+    console.error('Firestore error:',err);
+    setSyncStatus(false,'Erro de conexão');
   });
   // CLIENTES
-  onSnapshot(collection(db,'clientes'), snap=>{
+  db.collection('clientes').onSnapshot(snap=>{
     if(snap.metadata.hasPendingWrites) return;
     window.clientes = snap.docs.map(d=>({...d.data(), _fid:d.id}));
     const v = document.getElementById('v-clientes');
     if(v&&v.classList.contains('on')) renderClientes();
-    // atualiza datalists
     ['dl-cli','dl-cli-ev'].forEach(id=>{
       const dl=document.getElementById(id);
       if(dl) dl.innerHTML=window.clientes.map(c=>`<option value="${c.nome}">`).join('');
     });
   });
   // VENDAS
-  onSnapshot(collection(db,'vendas'), snap=>{
+  db.collection('vendas').onSnapshot(snap=>{
     if(snap.metadata.hasPendingWrites) return;
     window.vendas = snap.docs.map(d=>({...d.data(), _fid:d.id}));
     window.vendas.sort((a,b)=>new Date(b.data)-new Date(a.data));
@@ -64,11 +65,11 @@ function startSync(){
     if(v&&v.classList.contains('on')) renderVendas();
     const p = document.getElementById('v-pagamentos');
     if(p&&p.classList.contains('on')) renderPagamentos();
-    const d = document.getElementById('v-dashboard');
-    if(d&&d.classList.contains('on')) renderDash();
+    const d2 = document.getElementById('v-dashboard');
+    if(d2&&d2.classList.contains('on')) renderDash();
   });
   // CONDICIONAIS
-  onSnapshot(collection(db,'condicionais'), snap=>{
+  db.collection('condicionais').onSnapshot(snap=>{
     if(snap.metadata.hasPendingWrites) return;
     window.condicionais = snap.docs.map(d=>({...d.data(), _fid:d.id}));
     window.condicionais.sort((a,b)=>new Date(b.saida)-new Date(a.saida));
@@ -78,46 +79,56 @@ function startSync(){
   });
 }
 
-// ── DB helpers exposed globally ─────────────────────────────────────────
+// ── DB helpers ─────────────────────────────────────────────────────────
 window.dbSave = async function(col, data, fid=null){
   const {_fid, id, ...clean} = data;
-  clean.updatedAt = serverTimestamp();
+  clean.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
   if(fid){
-    await updateDoc(doc(db,col,fid), clean);
+    await db.collection(col).doc(fid).update(clean);
     return fid;
   } else {
-    clean.createdAt = serverTimestamp();
-    const ref = await addDoc(collection(db,col), clean);
+    clean.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    const ref = await db.collection(col).add(clean);
     return ref.id;
   }
 };
 window.dbDelete = async function(col, fid){
-  await deleteDoc(doc(db,col,fid));
+  await db.collection(col).doc(fid).delete();
 };
 window.dbSet = async function(col, id, data){
   const {_fid, ...clean} = data;
-  clean.updatedAt = serverTimestamp();
-  await setDoc(doc(db,col,String(id)), clean, {merge:true});
+  clean.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+  await db.collection(col).doc(String(id)).set(clean, {merge:true});
 };
 
-// ── Seed produtos se Firestore vazio ────────────────────────────────────
+// ── Seed e iniciar sync ────────────────────────────────────────────────
 async function seedIfEmpty(){
-  const snap = await getDocs(collection(db,'produtos'));
-  if(!snap.empty) { startSync(); return; }
-  // seed produtos do array local
-  const batch = window._localProdutos||[];
-  for(const p of batch){
-    const {_fid,...data} = p;
-    await setDoc(doc(db,'produtos',String(p.id)), {...data, createdAt:serverTimestamp(), updatedAt:serverTimestamp()});
+  try {
+    const snap = await db.collection('produtos').get();
+    if(!snap.empty){ startSync(); return; }
+    const batch2 = db.batch();
+    const prods = window._localProdutos||[];
+    prods.forEach(p=>{
+      const {_fid,...data} = p;
+      const ref = db.collection('produtos').doc(String(p.id));
+      batch2.set(ref, {...data,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    await batch2.commit();
+    startSync();
+  } catch(e){
+    console.error('Seed error:',e);
+    setSyncStatus(false,'Erro: '+e.message);
   }
-  startSync();
 }
 
 window.addEventListener('load', ()=>{
   const wait = setInterval(()=>{
     if(typeof window._localProdutos !== 'undefined'){
       clearInterval(wait);
-      seedIfEmpty();
+      setTimeout(seedIfEmpty, 500);
     }
   },200);
 });
