@@ -11,128 +11,9 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <!-- Firebase SDK (compat — funciona no GitHub Pages) -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-<script>
-const firebaseConfig = {
-  apiKey: "AIzaSyBr_jd2HAwdXiE4GXL9z8dsYBJwsiIbxOY",
-  authDomain: "pwrd-system.firebaseapp.com",
-  projectId: "pwrd-system",
-  storageBucket: "pwrd-system.firebasestorage.app",
-  messagingSenderId: "562065064688",
-  appId: "1:562065064688:web:112664969056af42a4f835"
-};
-
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-window._db = db;
-
-// ── Sync listeners ──────────────────────────────────────────────────────
-function startSync(){
-  // PRODUTOS
-  db.collection('produtos').onSnapshot(snap=>{
-    if(snap.metadata.hasPendingWrites) return;
-    const data = snap.docs.map(d=>({...d.data(), _fid:d.id}));
-    if(data.length){
-      window.produtos = data;
-      if(typeof acInitProdutos==='function') acInitProdutos();
-      const v = document.getElementById('v-estoque');
-      if(v&&v.classList.contains('on')) renderEstoque();
-    }
-    setSyncStatus(true,'Sincronizado');
-  }, err=>{
-    console.error('Firestore error:',err);
-    setSyncStatus(false,'Erro de conexão');
-  });
-  // CLIENTES
-  db.collection('clientes').onSnapshot(snap=>{
-    if(snap.metadata.hasPendingWrites) return;
-    window.clientes = snap.docs.map(d=>({...d.data(), _fid:d.id}));
-    const v = document.getElementById('v-clientes');
-    if(v&&v.classList.contains('on')) renderClientes();
-    ['dl-cli','dl-cli-ev'].forEach(id=>{
-      const dl=document.getElementById(id);
-      if(dl) dl.innerHTML=window.clientes.map(c=>`<option value="${c.nome}">`).join('');
-    });
-  });
-  // VENDAS
-  db.collection('vendas').onSnapshot(snap=>{
-    if(snap.metadata.hasPendingWrites) return;
-    window.vendas = snap.docs.map(d=>({...d.data(), _fid:d.id}));
-    window.vendas.sort((a,b)=>new Date(b.data)-new Date(a.data));
-    updateBadges();
-    const v = document.getElementById('v-vendas');
-    if(v&&v.classList.contains('on')) renderVendas();
-    const p = document.getElementById('v-pagamentos');
-    if(p&&p.classList.contains('on')) renderPagamentos();
-    const d2 = document.getElementById('v-dashboard');
-    if(d2&&d2.classList.contains('on')) renderDash();
-  });
-  // CONDICIONAIS
-  db.collection('condicionais').onSnapshot(snap=>{
-    if(snap.metadata.hasPendingWrites) return;
-    window.condicionais = snap.docs.map(d=>({...d.data(), _fid:d.id}));
-    window.condicionais.sort((a,b)=>new Date(b.saida)-new Date(a.saida));
-    updateBadges();
-    const v = document.getElementById('v-condicional');
-    if(v&&v.classList.contains('on')) renderCondicional();
-  });
-}
-
-// ── DB helpers ─────────────────────────────────────────────────────────
-window.dbSave = async function(col, data, fid=null){
-  const {_fid, id, ...clean} = data;
-  clean.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
-  if(fid){
-    await db.collection(col).doc(fid).update(clean);
-    return fid;
-  } else {
-    clean.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-    const ref = await db.collection(col).add(clean);
-    return ref.id;
-  }
-};
-window.dbDelete = async function(col, fid){
-  await db.collection(col).doc(fid).delete();
-};
-window.dbSet = async function(col, id, data){
-  const {_fid, ...clean} = data;
-  clean.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
-  await db.collection(col).doc(String(id)).set(clean, {merge:true});
-};
-
-// ── Seed e iniciar sync ────────────────────────────────────────────────
-async function seedIfEmpty(){
-  try {
-    const snap = await db.collection('produtos').get();
-    if(!snap.empty){ startSync(); return; }
-    const batch2 = db.batch();
-    const prods = window._localProdutos||[];
-    prods.forEach(p=>{
-      const {_fid,...data} = p;
-      const ref = db.collection('produtos').doc(String(p.id));
-      batch2.set(ref, {...data,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-    });
-    await batch2.commit();
-    startSync();
-  } catch(e){
-    console.error('Seed error:',e);
-    setSyncStatus(false,'Erro: '+e.message);
-  }
-}
-
-window.addEventListener('load', ()=>{
-  const wait = setInterval(()=>{
-    if(typeof window._localProdutos !== 'undefined'){
-      clearInterval(wait);
-      setTimeout(seedIfEmpty, 500);
-    }
-  },200);
-});
-</script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<!-- Firebase init moved to main script -->
 <style>
 :root{
   --bg:#0D0D0D;--bg2:#161616;--bg3:#1E1E1E;--bg4:#252525;
@@ -1023,6 +904,143 @@ td.mono{font-family:'DM Mono',monospace;font-size:11px}
 <div id="toast"></div>
 
 <script>
+// Firebase init
+const firebaseConfig = {
+  apiKey: "AIzaSyBr_jd2HAwdXiE4GXL9z8dsYBJwsiIbxOY",
+  authDomain: "pwrd-system.firebaseapp.com",
+  projectId: "pwrd-system",
+  storageBucket: "pwrd-system.firebasestorage.app",
+  messagingSenderId: "562065064688",
+  appId: "1:562065064688:web:112664969056af42a4f835"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+window._db = db;
+
+// ── Sync listeners ──────────────────────────────────────────────────────
+function startSync(){
+  // PRODUTOS
+  db.collection('produtos').onSnapshot(snap=>{
+    if(snap.metadata.hasPendingWrites) return;
+    const data = snap.docs.map(d=>({...d.data(), _fid:d.id}));
+    if(data.length){
+      window.produtos = data;
+      if(typeof acInitProdutos==='function') acInitProdutos();
+      const v = document.getElementById('v-estoque');
+      if(v&&v.classList.contains('on')) renderEstoque();
+    }
+    if(typeof setSyncStatus==='function') setSyncStatus(true,'Sincronizado');
+  }, err=>{
+    console.error('Firestore error:',err);
+    if(typeof setSyncStatus==='function') setSyncStatus(false,'Erro de conexão');
+  });
+  // CLIENTES
+  db.collection('clientes').onSnapshot(snap=>{
+    if(snap.metadata.hasPendingWrites) return;
+    window.clientes = snap.docs.map(d=>({...d.data(), _fid:d.id}));
+    const v = document.getElementById('v-clientes');
+    if(v&&v.classList.contains('on')) renderClientes();
+    ['dl-cli','dl-cli-ev'].forEach(id=>{
+      const dl=document.getElementById(id);
+      if(dl) dl.innerHTML=window.clientes.map(c=>`<option value="${c.nome}">`).join('');
+    });
+  });
+  // VENDAS
+  db.collection('vendas').onSnapshot(snap=>{
+    if(snap.metadata.hasPendingWrites) return;
+    window.vendas = snap.docs.map(d=>({...d.data(), _fid:d.id}));
+    window.vendas.sort((a,b)=>new Date(b.data)-new Date(a.data));
+    updateBadges();
+    const v = document.getElementById('v-vendas');
+    if(v&&v.classList.contains('on')) renderVendas();
+    const p = document.getElementById('v-pagamentos');
+    if(p&&p.classList.contains('on')) renderPagamentos();
+    const d2 = document.getElementById('v-dashboard');
+    if(d2&&d2.classList.contains('on')) renderDash();
+  });
+  // CONDICIONAIS
+  db.collection('condicionais').onSnapshot(snap=>{
+    if(snap.metadata.hasPendingWrites) return;
+    window.condicionais = snap.docs.map(d=>({...d.data(), _fid:d.id}));
+    window.condicionais.sort((a,b)=>new Date(b.saida)-new Date(a.saida));
+    updateBadges();
+    const v = document.getElementById('v-condicional');
+    if(v&&v.classList.contains('on')) renderCondicional();
+  });
+}
+
+// ── DB helpers ─────────────────────────────────────────────────────────
+window.dbSave = async function(col, data, fid=null){
+  const {_fid, id, ...clean} = data;
+  clean.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+  if(fid){
+    await db.collection(col).doc(fid).update(clean);
+    return fid;
+  } else {
+    clean.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    const ref = await db.collection(col).add(clean);
+    return ref.id;
+  }
+};
+window.dbDelete = async function(col, fid){
+  await db.collection(col).doc(fid).delete();
+};
+window.dbSet = async function(col, id, data){
+  const {_fid, ...clean} = data;
+  clean.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+  await db.collection(col).doc(String(id)).set(clean, {merge:true});
+};
+
+// ── Seed e iniciar sync ────────────────────────────────────────────────
+async function seedIfEmpty(){
+  try {
+    if(typeof setSyncStatus==='function') setSyncStatus(false,'Carregando dados...');
+    console.log('PWRD: Conectando ao Firestore...');
+    const snap = await db.collection('produtos').get();
+    console.log('PWRD: Firestore OK. Produtos no banco:', snap.size);
+    if(!snap.empty){ 
+      console.log('PWRD: Banco já populado. Iniciando sync...');
+      startSync(); 
+      return; 
+    }
+    console.log('PWRD: Banco vazio. Enviando produtos iniciais...');
+    // Envia em lotes de 400 (limite Firestore = 500 por batch)
+    const prods = window._localProdutos||[];
+    const CHUNK = 400;
+    for(let i=0;i<prods.length;i+=CHUNK){
+      const batch2 = db.batch();
+      prods.slice(i,i+CHUNK).forEach(p=>{
+        const {_fid,...data} = p;
+        const ref = db.collection('produtos').doc(String(p.id));
+        batch2.set(ref, {...data,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      await batch2.commit();
+      console.log('PWRD: Lote enviado:', Math.min(i+CHUNK,prods.length), '/', prods.length);
+    }
+    console.log('PWRD: Seed concluído. Iniciando sync...');
+    startSync();
+  } catch(e){
+    console.error('PWRD Erro Firebase:',e);
+    setSyncStatus(false,'Erro: '+e.code+' — '+e.message);
+    // Tenta reconectar em 5 segundos
+    setTimeout(seedIfEmpty, 5000);
+  }
+}
+
+window.addEventListener('load', ()=>{
+  // Aguarda funções do app estarem prontas
+  const wait = setInterval(()=>{
+    if(typeof window._localProdutos !== 'undefined' && typeof setSyncStatus === 'function'){
+      clearInterval(wait);
+      setTimeout(seedIfEmpty, 800);
+    }
+  },200);
+});
+
 // ====================== DATA ======================
 const R=n=>Number(n)||0;
 const fR=v=>'R$ '+R(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1667,24 +1685,33 @@ function nfProdBusca(){
   ):[];
   if(reg)reg.focusIdx=-1;
   const nomeDigitado=inp?inp.value.trim():'';
-  const esc=s=>s.replace(/'/g,"\\'");
   const hiQ=q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   const hi=str=>str.replace(new RegExp('('+hiQ+')','gi'),'<mark>$1</mark>');
-  let rows=filtered.slice(0,40).map((it,i)=>
-    '<div class="ac-item" data-idx="'+i+'" data-value="'+it.value+'"'+
-    ' onmousedown="acSelect(\'nf-prod\',\''+esc(it.value)+'\',\''+esc(it.label)+'\',event)">'+
-    '<div>'+hi(it.label)+'</div>'+(it.sub?'<div class="ac-sub">'+hi(it.sub)+'</div>':'')+
-    '</div>'
-  ).join('');
-  rows+='<div class="ac-item" style="border-top:1px solid var(--border);color:var(--pink);margin-top:2px"'+
-    ' onmousedown="nfCadastrarNovo(\''+esc(nomeDigitado)+'\')">'+
-    '<div style="display:flex;align-items:center;gap:8px">'+
-    '<i class="ti ti-plus" style="font-size:13px"></i>'+
-    'Cadastrar novo: <strong>'+nomeDigitado+'</strong></div>'+
-    '<div class="ac-sub">Produto não encontrado no cadastro — clique para cadastrar</div></div>';
-  list.innerHTML=!filtered.length
-    ?'<div class="ac-empty">Nenhum produto encontrado</div>'+rows.split('border-top').slice(-1).map(s=>'<div class="ac-item" style="border-top'+s)[0]
-    :rows;
+  // Build items using dataset to avoid quote escaping issues
+  const tmp=document.createElement('div');
+  const itemEls=filtered.slice(0,40).map((it,i)=>{
+    const d=document.createElement('div');
+    d.className='ac-item';
+    d.dataset.idx=i;
+    d.dataset.value=it.value;
+    d.innerHTML='<div>'+hi(it.label)+'</div>'+(it.sub?'<div class="ac-sub">'+hi(it.sub)+'</div>':'');
+    d.addEventListener('mousedown',e=>{e.preventDefault();acSelect('nf-prod',it.value,it.label,e);});
+    return d;
+  });
+  const novoEl=document.createElement('div');
+  novoEl.className='ac-item';
+  novoEl.style.cssText='border-top:1px solid var(--border);color:var(--pink);margin-top:2px';
+  novoEl.innerHTML='<div style="display:flex;align-items:center;gap:8px"><i class="ti ti-plus" style="font-size:13px"></i>Cadastrar novo: <strong>'+nomeDigitado+'</strong></div><div class="ac-sub">Produto nao encontrado — clique para cadastrar</div>';
+  novoEl.addEventListener('mousedown',e=>{e.preventDefault();nfCadastrarNovo(nomeDigitado);});
+  list.innerHTML='';
+  if(!filtered.length) {
+    const empty=document.createElement('div');
+    empty.className='ac-empty';
+    empty.textContent='Nenhum produto encontrado para "'+nomeDigitado+'"';
+    list.appendChild(empty);
+  }
+  itemEls.forEach(el=>list.appendChild(el));
+  list.appendChild(novoEl);
   list.classList.add('open');
 }
 function nfLimparProd(){
@@ -1823,7 +1850,7 @@ function renderEstoque(){
   const cls=(document.getElementById('est-cls')||{value:''}).value;
   const sit=(document.getElementById('est-sit')||{value:''}).value;
   const grupos=[...new Set(produtos.map(p=>p.grupo))].sort();
-  document.getElementById('chips-est').innerHTML=`<button class="chip ${!estCatFil?'on':''}" onclick="estCatFil='';renderEstoque()">Todos</button>`+grupos.map(g=>`<button class="chip ${estCatFil===g?'on':''}" onclick="estCatFil='${g.replace(/'/g,'')}'.replace(/\\\\'/g,\"'\");estCatFil='${g}';renderEstoque()">${g}</button>`).join('');
+  document.getElementById('chips-est').innerHTML=`<button class="chip ${!estCatFil?'on':''}" onclick="estCatFil='';renderEstoque()">Todos</button>`+grupos.map(g=>`<button class="chip ${estCatFil===g?'on':''}" onclick="estCatFil='${g.replace(/'/g,'')}'.replace(/\\\'/g,\"'\");estCatFil='${g}';renderEstoque()">${g}</button>`).join('');
   let list=produtos.filter(p=>{
     const passQ  = !q   || p.nome.toLowerCase().includes(q) || p.grupo.toLowerCase().includes(q);
     const passTam= !tam || p.tam===tam;
@@ -2063,7 +2090,7 @@ function renderPagamentos(){
           <div style="display:flex;align-items:center;gap:10px">
             <div style="font-family:'DM Mono',monospace;font-weight:700;font-size:16px;color:var(--red)">${fR(total)}</div>
             <button class="btn sm" style="background:#25D366;border-color:#25D366;color:#fff"
-              onclick="cobrarWA('${cli.replace(/'/g,"\\'")}','${tel}')">
+              onclick="cobrarWA('${cli.replace(/'/g,"\'")}','${tel}')">
               <i class="ti ti-brand-whatsapp"></i>Cobrar
             </button>
           </div>
@@ -2107,7 +2134,7 @@ function renderPagamentos(){
         <td style="padding:6px 8px;text-align:center;font-family:'DM Mono',monospace;font-size:11px;${isVenc?'color:var(--red);font-weight:600':isProx?'color:var(--amber)':''}">${v.venc?fD(v.venc)+'<br><span style="font-size:10px">'+(isVenc?'⚠ '+Math.abs(d)+'d atraso':isProx?'⏰ '+d+'d':'')+'</span>':'—'}</td>
         <td style="padding:6px 8px;text-align:center">${stBadge(v)}</td>
         <td style="padding:6px 8px;text-align:right;white-space:nowrap">
-          <button class="btn sm success" onclick="abrirModalReceber(${v.id??v.localId},'${cli.replace(/'/g,"\\'")}','${(v.prod||'').replace(/'/g,"\\'").replace(/ — Parcela.*/,'')}',${v.val*v.qtd})" title="Registrar recebimento deste item">
+          <button class="btn sm success" onclick="abrirModalReceber(${v.id??v.localId},'${cli.replace(/'/g,"\'")}','${(v.prod||'').replace(/'/g,"\'").replace(/ — Parcela.*/,'')}',${v.val*v.qtd})" title="Registrar recebimento deste item">
             <i class="ti ti-cash"></i>Receber
           </button>
         </td>
@@ -2124,10 +2151,10 @@ function renderPagamentos(){
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <div style="font-family:'DM Mono',monospace;font-weight:700;font-size:15px;${temVencido?'color:var(--red)':'color:var(--amber)'}">${fR(total)}</div>
-          <button class="btn sm" style="background:#25D366;border-color:#25D366;color:#fff" onclick="cobrarWA('${cli.replace(/'/g,"\\'")}','${tel}')">
+          <button class="btn sm" style="background:#25D366;border-color:#25D366;color:#fff" onclick="cobrarWA('${cli.replace(/'/g,"\'")}','${tel}')">
             <i class="ti ti-brand-whatsapp"></i>Cobrar
           </button>
-          <button class="btn sm primary" onclick="abrirPixCli('${cli.replace(/'/g,"\\'")}')">
+          <button class="btn sm primary" onclick="abrirPixCli('${cli.replace(/'/g,"\'")}')">
             <i class="ti ti-brand-cashapp"></i>PIX
           </button>
         </div>
@@ -2291,7 +2318,7 @@ function registrarPix(){
 // Cobrança via WhatsApp
 function gerarMsgCobranca(cli,itens){
   const total=itens.reduce((a,v)=>a+v.val*v.qtd,0);
-  const linhas=itens.map(v=>`  • ${v.prod.replace(/ — Parcela.*/,'')}${v.prod.includes('Parcela')?' ('+v.prod.replace(/.*— /,'')+')'':''} — ${fR(v.val*v.qtd)} (venc. ${fD(v.venc)})`).join('\n');
+  const linhas=itens.map(v=>{const nome=v.prod.replace(/ — Parcela.*/,'');const parc=v.prod.includes('Parcela')?' ('+v.prod.replace(/.*— /,'')+')'  :'';return'  • '+nome+parc+' — '+fR(v.val*v.qtd)+' (venc. '+fD(v.venc)+')'}).join('\n');
   return `Olá, *${cli}*! 😊\n\nPassando para lembrar que temos o seguinte em aberto:\n\n${linhas}\n\n*Total: ${fR(total)}*\n\nQuando puder, pode me avisar? PIX disponível 🙏\n\nObrigada, PWRD Sisters! 💪`;
 }
 function cobrarWA(cli,tel){
@@ -2323,7 +2350,7 @@ function renderHistorico(){
     <td class="mono ${dias(v.venc)<0&&v.st==='pendente'?'txt-r':''}">${fD(v.venc)}</td>
     <td>${stBadge(v)}</td>
     <td style="font-size:11px;color:var(--text3);max-width:120px;overflow:hidden;text-overflow:ellipsis">${v.obs||'—'}</td>
-    <td>${v.st==='pendente'?`<button class="btn sm success" onclick="abrirModalReceber(${v.id??v.localId},'${v.cli.replace(/'/g,"\\'")}','${v.prod.replace(/'/g,"\\'").replace(/ — Parcela.*/,'')}',${v.val*v.qtd})"><i class="ti ti-cash"></i>Receber</button>`:'<span class="badge pg">✓</span>'}</td>
+    <td>${v.st==='pendente'?`<button class="btn sm success" onclick="abrirModalReceber(${v.id??v.localId},'${v.cli.replace(/'/g,"\'")}','${v.prod.replace(/'/g,"\'").replace(/ — Parcela.*/,'')}',${v.val*v.qtd})"><i class="ti ti-cash"></i>Receber</button>`:'<span class="badge pg">✓</span>'}</td>
   </tr>`).join('')}</tbody>`;
 }
 
@@ -2464,11 +2491,11 @@ function cancelarCliente(){
 }
 
 function excluirCliente(id){
-  const c=clientes.find(x=>x.id===id);if(!c)return;
-  if(!confirm(`Excluir cliente "${c.nome}"?`))return;
   const c=clientes.find(x=>x.id===id);
+  if(!c)return;
+  if(!confirm('Excluir cliente "'+c.nome+'"?'))return;
   clientes=clientes.filter(x=>x.id!==id);
-  if(typeof dbDelete==='function'&&c?._fid) dbDelete('clientes',c._fid);
+  if(typeof dbDelete==='function'&&c._fid) dbDelete('clientes',c._fid);
   renderClientes();toast('Cliente removido');
 }
 
@@ -2908,7 +2935,7 @@ function acFilter(fieldId) {
     list.innerHTML = filtered.slice(0, 60).map((it, i) => {
       const hi = (str) => str.replace(new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi'), '<mark>$1</mark>');
       return `<div class="ac-item" data-idx="${i}" data-value="${it.value}"
-        onmousedown="acSelect('${fieldId}','${it.value.replace(/'/g,"\\'")}','${it.label.replace(/'/g,"\\'")}',event)"
+        onmousedown="acSelect('${fieldId}','${it.value.replace(/'/g,"\'")}','${it.label.replace(/'/g,"\'")}',event)"
         ><div>${q ? hi(it.label) : it.label}</div>${it.sub ? '<div class="ac-sub">' + (q ? hi(it.sub) : it.sub) + '</div>' : ''}</div>`;
     }).join('');
   }
