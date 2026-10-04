@@ -2813,14 +2813,16 @@ function renderCondicional(){
       else if(c.st==='vendido')statusBadge='<span class="badge pg">✓ Vendido</span>';
       else if(c.st==='devolvido')statusBadge='<span class="badge ns">↩ Devolvido</span>';
       let acoes='';
+      // usa _fid (Firebase) se disponível, senão localId ou id numérico
+      const cKey=c._fid||c.localId||c.id;
       if(c.st==='aberto'){
         acoes=`<div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center">
-          <button class="btn sm success" onclick="abrirModalCondVenda(${c.id})" title="Confirmar que o cliente comprou"><i class="ti ti-check"></i>Vendido</button>
-          <button class="btn sm" style="border-color:var(--blue);color:var(--blue)" onclick="condDevolver(${c.id})" title="Cliente devolveu a peça"><i class="ti ti-arrow-back-up"></i>Dev.</button>
-          <button class="btn sm ghost" onclick="mostrarReciboCond(condicionais.find(x=>x.id===${c.id}))" title="Imprimir / WhatsApp"><i class="ti ti-send"></i></button>
+          <button class="btn sm success" onclick="abrirModalCondVenda('${cKey}')" title="Confirmar que o cliente comprou"><i class="ti ti-check"></i>Vendido</button>
+          <button class="btn sm" style="border-color:var(--blue);color:var(--blue)" onclick="condDevolver('${cKey}')" title="Cliente devolveu a peça"><i class="ti ti-arrow-back-up"></i>Dev.</button>
+          <button class="btn sm ghost" onclick="mostrarReciboCond(condicionais.find(x=>x._fid==='${cKey}'||x.localId=='${cKey}'||x.id=='${cKey}'))" title="Imprimir / WhatsApp"><i class="ti ti-send"></i></button>
         </div>`;
       } else {
-        acoes=`<button class="btn sm ghost" onclick="mostrarReciboCond(condicionais.find(x=>x.id===${c.id}))" title="Ver comprovante"><i class="ti ti-file-text"></i></button>`;
+        acoes=`<button class="btn sm ghost" onclick="mostrarReciboCond(condicionais.find(x=>x._fid==='${cKey}'||x.localId=='${cKey}'||x.id=='${cKey}'))" title="Ver comprovante"><i class="ti ti-file-text"></i></button>`;
       }
       return`<tr style="${atrasado?'background:rgba(232,75,75,.04)':''}">
         <td class="mono">${fD(c.saida)}</td>
@@ -2837,7 +2839,7 @@ function renderCondicional(){
 }
 
 function condDevolver(id){
-  const c=condicionais.find(x=>x.id===id);
+  const c=condicionais.find(x=>x._fid===String(id)||x.id==id||x.localId==id);
   if(!c||c.st!=='aberto')return;
   if(!confirm(`Confirmar devolução de "${c.prod}" por ${c.cli}?\nO produto retornará ao estoque.`))return;
   c.st='devolvido';c.data_enc=today();
@@ -2852,9 +2854,11 @@ function condDevolver(id){
 }
 
 function abrirModalCondVenda(id){
-  const c=condicionais.find(x=>x.id===id);
-  if(!c)return;
-  condEditId=id;
+  // busca por id numérico, localId ou _fid (Firebase)
+  const c=condicionais.find(x=>x.id==id||x.localId==id||x._fid===String(id));
+  if(!c){toast('Condicional não encontrado',false);return;}
+  // salva o _fid se disponível, senão usa o id
+  condEditId=c._fid||c.localId||c.id;
   document.getElementById('modal-cond-info').innerHTML=`
     <div style="font-weight:600;margin-bottom:6px">${c.prod}</div>
     <div style="color:var(--text2)">Cliente: <strong style="color:var(--text)">${c.cli}</strong> · Saiu em ${fD(c.saida)}</div>
@@ -2868,8 +2872,8 @@ function abrirModalCondVenda(id){
 }
 
 function condConfirmarVenda(){
-  const c=condicionais.find(x=>x.id===condEditId);
-  if(!c)return;
+  const c=condicionais.find(x=>x._fid===condEditId||x.id==condEditId||x.localId==condEditId);
+  if(!c){toast('Erro ao localizar condicional',false);return;}
   const preco=R(document.getElementById('mcv-preco').value);
   const qtd=parseInt(document.getElementById('mcv-qtd').value)||c.qtd;
   const forma=document.getElementById('mcv-forma').value;
